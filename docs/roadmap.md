@@ -20,6 +20,7 @@ on a single branch.
 | 6 | **Search** — find posts and people from the sidebar | **Done** |
 | 6.5 | **Feed caching** — cache the ranked feed, warm on boot, invalidate on engagement | **Done** |
 | 7 | **Images** — profile avatars and image uploads on posts | **Done** |
+| 8 | **Stress and telemetry** — shaped seed data at scale, basic telemetry, stress the ranked feed, write down what breaks | **Planned** |
 
 ### Infrastructure
 
@@ -346,6 +347,65 @@ Per-requirement status is in [`REQUIREMENTS.md`](../REQUIREMENTS.md) (F-7.x). Wh
   while every image variant request failed. The library is now installed in the runtime
   image, and the smoke test uploads an image and fetches its processed variant, so CI's
   container job fails on a missing image library instead of releasing it.
+
+### Milestone 8 — Stress and telemetry (F-8.x) — **planned**
+
+The first milestone after the feature block, and the first whose deliverable is
+*measurement* rather than behaviour: make the app observable, load it with realistically
+shaped data, stress the ranked feed, and write down what actually happens. Improvements
+come afterwards, each traceable to a number this milestone produced.
+
+**Why now.** The ranked feed's cost model is currently known by reading code, not by
+measurement. `RankedFeed#compute_feed` loads **every top-level post and every repost into
+memory** on each cache miss — with users, avatars and image blobs eager-loaded — scores
+and sorts them in Ruby, and caches the whole array under a single key for five minutes.
+Every like, repost, reply and new post busts that key. At the current seed scale (1,000
+posts) all of this is invisible. The questions a stress run answers: at what scale it
+stops being invisible, whether engagement churn under load turns the cache into a rebuild
+storm, what a page of feed costs cold versus warm, and how profile pages behave for
+accounts three orders of magnitude apart in size.
+
+#### Slice A — Seed profiles (F-8.1)
+
+`script/seed-load-test` currently creates a flat 1,000 users × 1,000 posts. Extend it to
+generate *shaped* data at configurable scale:
+
+- Account shapes mixed per run, not uniform: lurkers with nothing, typical accounts with
+  tens of posts, heavy accounts with hundreds, a few mega-accounts with thousands.
+- Engagement skew: a small viral head and a long barely-engaged tail, rather than uniform
+  random likes.
+- Scale as an argument (1k / 10k / 100k posts) so runs are comparable over time. Stays
+  adapter-agnostic and idempotent, as today.
+
+#### Slice B — Telemetry via OpenTelemetry (F-8.2)
+
+Decided in [ADR 0009](adr/0009-opentelemetry.md): the app is instrumented with
+**OpenTelemetry** — Rails and Active Record auto-instrumentation for the request-level
+signals (duration, DB time, query counts), plus custom instrumentation in `RankedFeed`
+for the feed signals (a rebuild span carrying item count; cache hit or miss on every feed
+request). The exporter is configuration: console or a local OTLP endpoint during stress
+runs, the infrastructure track's collector once the app runs on the cluster. Instrumented
+once, exported anywhere — that is the reason it beat zero-dependency log lines, and the
+cost is recorded in the ADR.
+
+#### Slice C — Stress scenarios and findings (F-8.3, F-8.4)
+
+Decided in [ADR 0008](adr/0008-k6-load-generation.md): **k6** drives the load, so
+app-side numbers and the infrastructure track's later cluster-side numbers (I-1g) are
+measured by the same tool and comparable without caveats. Scenarios are k6 scripts in
+`web/script/`, run against a locally booted app at the 10k and 100k seed scales: the feed
+cold and warm; the feed while engagement writes bust the cache mid-read; mega-account
+profile pages; search under volume. Findings land in `docs/stress-testing.md` as
+p50/p95/max per scenario per scale, and every improvement PR that follows cites the
+number it moves. **Milestone 8 measures; it fixes nothing** — improvements are separate
+follow-up PRs.
+
+**The boundary with the infrastructure repository.** This milestone is app logic under
+data volume, measured against a locally running app — it lives here because the seed
+shapes, the telemetry and the feed behaviour are application code. Sustained HTTP load,
+latency injection and cluster behaviour belong to I-1g in
+[JDSG-Group6-infra](https://github.com/GauranshMathur/JDSG-Group6-infra), which consumes
+this milestone's seed profiles and telemetry when the app runs on the local cluster.
 
 ### Explicitly not in this block
 

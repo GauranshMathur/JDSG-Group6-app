@@ -127,6 +127,15 @@ production-ready, and so the work is visible if it ever is deployed.
 | F-7.4 | Image metadata (EXIF, etc.) is stripped on upload | **Met** |
 | F-7.5 | Posts reference images via metadata, not inline binary — images load asynchronously | **Met** |
 
+### 1.8 Stress and telemetry (milestone 8)
+
+| ID | Requirement | Status |
+| --- | --- | --- |
+| F-8.1 | The load-test seed generates shaped data at configurable scale — mixed account sizes from lurker to mega-account, skewed engagement — on any supported database | Planned |
+| F-8.2 | The app is instrumented with OpenTelemetry: request duration, DB time and query counts from auto-instrumentation, plus feed rebuild duration, item count and cache hit/miss from custom spans — exporter chosen by configuration ([ADR 0009](docs/adr/0009-opentelemetry.md)) | Planned |
+| F-8.3 | Repeatable k6 scenarios exercise the feed cold, warm and under engagement churn — plus mega-account profiles and search — at the 10k and 100k seed scales ([ADR 0008](docs/adr/0008-k6-load-generation.md)) | Planned |
+| F-8.4 | Findings are written down with numbers, and every improvement that follows traces to a measured problem | Planned |
+
 ---
 
 ## 1b. Design requirements
