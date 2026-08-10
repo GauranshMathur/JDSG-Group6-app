@@ -207,9 +207,12 @@ docker build -t twitter-clone-web web   # Build the image
 
 ## Current milestone
 
-**The app side is complete.** All app milestones (1–7, including 5.5 and 6.5) are built,
-tested and merged; there is no current or planned app milestone. New app features are a
-scope expansion to raise with the user, not a default.
+**The feature block is complete; milestone 8 — stress and telemetry — is planned.**
+Milestones 1–7 (including 5.5 and 6.5) are built, tested and merged. Milestone 8 is the
+first measurement milestone: shaped seed data at scale, basic telemetry from Rails's own
+instrumentation, scripted stress runs against the ranked feed, and findings written down
+with numbers — the plan is in `docs/roadmap.md`, the requirements are F-8.x. New app
+*features* remain a scope expansion to raise with the user, not a default.
 
 **Infrastructure lives in its own repository.** [JDSG-Group6-infra](https://github.com/GauranshMathur/JDSG-Group6-infra) holds the AWS
 reference design, the Terraform, the Kubernetes manifests and the decisions behind them. This

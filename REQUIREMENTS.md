@@ -127,6 +127,15 @@ production-ready, and so the work is visible if it ever is deployed.
 | F-7.4 | Image metadata (EXIF, etc.) is stripped on upload | **Met** |
 | F-7.5 | Posts reference images via metadata, not inline binary — images load asynchronously | **Met** |
 
+### 1.8 Stress and telemetry (milestone 8)
+
+| ID | Requirement | Status |
+| --- | --- | --- |
+| F-8.1 | The load-test seed generates shaped data at configurable scale — mixed account sizes from lurker to mega-account, skewed engagement — on any supported database | Planned |
+| F-8.2 | Basic telemetry exists: per-request duration, DB time and query count are visible, and the ranked feed logs rebuild duration, item count and cache hit/miss | Planned |
+| F-8.3 | A repeatable, scripted stress scenario exercises the feed cold, warm and under engagement churn, at each seed scale | Planned |
+| F-8.4 | Findings are written down with numbers, and every improvement that follows traces to a measured problem | Planned |
+
 ---
 
 ## 1b. Design requirements

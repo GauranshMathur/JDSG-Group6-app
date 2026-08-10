@@ -12,6 +12,33 @@ relevant document when it is not.
 
 ---
 
+## Milestone 8 — stress and telemetry
+
+### What generates the load?
+
+A plain Ruby or shell script hitting endpoints keeps zero new dependencies and is enough
+for single-host stress runs. k6 is the leading candidate for the infrastructure
+repository's I-1g load testing, and using it here too would make app-side and
+cluster-side numbers directly comparable — at the cost of this repository carrying a tool
+it otherwise would not.
+
+**Why it matters:** it decides whether the numbers measured here and the numbers measured
+on the cluster can be compared without caveats.
+
+**When:** at the start of slice C. Slices A and B do not depend on it.
+
+### How deep does telemetry go?
+
+Log lines from `ActiveSupport::Notifications` need nothing new. A metrics endpoint or
+OpenTelemetry would serve the infrastructure track's Prometheus/Grafana plan directly,
+but each adds a dependency and a surface the proof of concept has avoided so far.
+
+**Why it matters:** observability is also planned on the infrastructure side; choosing
+logs now and metrics later may mean instrumenting twice.
+
+**When:** at the start of slice B. Anything beyond built-in instrumentation needs a yes
+first — the "no new framework without asking" rule applies.
+
 ## Product
 
 ### Should an edit history be kept?
