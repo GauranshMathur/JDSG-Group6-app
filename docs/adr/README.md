@@ -27,6 +27,8 @@ useful part.
 | [0005](0005-posts-outlive-accounts.md) | Posts outlive their author's account; identities are never reused | Accepted |
 | [0006](0006-immutable-usernames.md) | Usernames are chosen at registration and never change | Superseded by [0007](0007-changeable-usernames.md) |
 | [0007](0007-changeable-usernames.md) | Usernames are changeable; uniqueness is the only guarantee | Accepted |
+| [0008](0008-k6-load-generation.md) | k6 generates the stress-test load | Accepted |
+| [0009](0009-opentelemetry.md) | Telemetry is OpenTelemetry, not hand-rolled log lines | Accepted |
 
 Records about infrastructure live in
 [JDSG-Group6-infra](https://github.com/GauranshMathur/JDSG-Group6-infra/tree/main/docs/adr). ADR 0008 — Terraform is verified against the

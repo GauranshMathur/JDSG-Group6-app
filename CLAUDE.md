@@ -87,6 +87,9 @@ Rules:
   the switch is meant to stay a single environment variable.
 - Sidekiq with Redis for background jobs — decided but **not installed**. Do not add either
   until a milestone actually needs a job.
+- OpenTelemetry for telemetry and k6 for load generation — decided for milestone 8
+  ([ADR 0009](docs/adr/0009-opentelemetry.md), [ADR 0008](docs/adr/0008-k6-load-generation.md)),
+  **not yet installed**.
 - RSpec + FactoryBot for tests. Not Minitest.
 - RuboCop with `rubocop-rails-omakase`.
 - Propshaft + importmap. No Node build step, no bundler/webpack.
@@ -209,10 +212,12 @@ docker build -t twitter-clone-web web   # Build the image
 
 **The feature block is complete; milestone 8 — stress and telemetry — is planned.**
 Milestones 1–7 (including 5.5 and 6.5) are built, tested and merged. Milestone 8 is the
-first measurement milestone: shaped seed data at scale, basic telemetry from Rails's own
-instrumentation, scripted stress runs against the ranked feed, and findings written down
-with numbers — the plan is in `docs/roadmap.md`, the requirements are F-8.x. New app
-*features* remain a scope expansion to raise with the user, not a default.
+first measurement milestone: shaped seed data at 10k and 100k posts, OpenTelemetry
+instrumentation ([ADR 0009](docs/adr/0009-opentelemetry.md)), k6 stress scenarios against
+the ranked feed ([ADR 0008](docs/adr/0008-k6-load-generation.md)), and findings written
+down with numbers. It measures and fixes nothing; improvements follow as separate PRs,
+each citing a number. The plan is in `docs/roadmap.md`, the requirements are F-8.x. New
+app *features* remain a scope expansion to raise with the user, not a default.
 
 **Infrastructure lives in its own repository.** [JDSG-Group6-infra](https://github.com/GauranshMathur/JDSG-Group6-infra) holds the AWS
 reference design, the Terraform, the Kubernetes manifests and the decisions behind them. This

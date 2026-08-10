@@ -377,21 +377,28 @@ generate *shaped* data at configurable scale:
 - Scale as an argument (1k / 10k / 100k posts) so runs are comparable over time. Stays
   adapter-agnostic and idempotent, as today.
 
-#### Slice B — Basic telemetry (F-8.2)
+#### Slice B — Telemetry via OpenTelemetry (F-8.2)
 
-Just enough to see problems, built on instrumentation Rails already ships
-(`ActiveSupport::Notifications`) — no new gems without a decision first:
-
-- A per-request log line with duration, DB time and query count.
-- Feed telemetry: rebuild duration and item count on every recompute, cache hit or miss
-  on every feed request.
+Decided in [ADR 0009](adr/0009-opentelemetry.md): the app is instrumented with
+**OpenTelemetry** — Rails and Active Record auto-instrumentation for the request-level
+signals (duration, DB time, query counts), plus custom instrumentation in `RankedFeed`
+for the feed signals (a rebuild span carrying item count; cache hit or miss on every feed
+request). The exporter is configuration: console or a local OTLP endpoint during stress
+runs, the infrastructure track's collector once the app runs on the cluster. Instrumented
+once, exported anywhere — that is the reason it beat zero-dependency log lines, and the
+cost is recorded in the ADR.
 
 #### Slice C — Stress scenarios and findings (F-8.3, F-8.4)
 
-Scripted, repeatable runs against a locally running app, at each seed scale: the feed
+Decided in [ADR 0008](adr/0008-k6-load-generation.md): **k6** drives the load, so
+app-side numbers and the infrastructure track's later cluster-side numbers (I-1g) are
+measured by the same tool and comparable without caveats. Scenarios are k6 scripts in
+`web/script/`, run against a locally booted app at the 10k and 100k seed scales: the feed
 cold and warm; the feed while engagement writes bust the cache mid-read; mega-account
-profile pages; search under volume. Findings land in `docs/stress-testing.md` with
-numbers, and every improvement PR that follows cites the number it moves.
+profile pages; search under volume. Findings land in `docs/stress-testing.md` as
+p50/p95/max per scenario per scale, and every improvement PR that follows cites the
+number it moves. **Milestone 8 measures; it fixes nothing** — improvements are separate
+follow-up PRs.
 
 **The boundary with the infrastructure repository.** This milestone is app logic under
 data volume, measured against a locally running app — it lives here because the seed
