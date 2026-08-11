@@ -68,10 +68,15 @@ OTEL_TRACES_EXPORTER=console bin/rails server
 OTEL_TRACES_EXPORTER=otlp OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318 bin/rails server
 ```
 
-Unset means nothing is emitted: the SDK is configured and instrumentation loaded, but a
-developer running the app needs no collector and CI does not pay to serialize spans nobody
-reads. Specs attach their own in-memory exporter, which is how the feed signals are
-asserted in `spec/services/ranked_feed_telemetry_spec.rb` rather than eyeballed in a log.
+**Unset means off, and off means genuinely off** — no SDK, no instrumentation, no spans
+created. This is worth stating because the SDK's own default for `OTEL_TRACES_EXPORTER` is
+`otlp`: configured unconditionally, every process tries to POST spans to `localhost:4318`,
+logs an export failure per batch, and — the expensive part — wraps every Active Record call
+in a span whether or not anything is listening. A seed run is thousands of writes and paid
+that cost on all of them. The initializer therefore only configures the SDK when an
+exporter is asked for, or in test, where the specs attach their own in-memory exporter and
+need a real tracer provider to attach it to. That is how the feed signals are asserted in
+`spec/services/ranked_feed_telemetry_spec.rb` rather than eyeballed in a log.
 
 ## Baseline: the ranked feed at 10,000 posts
 

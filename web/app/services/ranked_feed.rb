@@ -29,8 +29,14 @@ class RankedFeed
     end
   end
 
+  # Asked for on every call rather than held in config.x: an unset
+  # `config.x.anything` returns an auto-vivified OrderedOptions, which is
+  # truthy, so a `config.x.tracer || fallback` never reaches its fallback and
+  # quietly answers `in_span` with nil instead of yielding. The tracer provider
+  # is the right place to ask anyway — it hands back a real tracer when the SDK
+  # is configured and a no-op one when it is not.
   def self.tracer
-    Rails.application.config.x.tracer || OpenTelemetry.tracer_provider.tracer("twitter-clone-web")
+    OpenTelemetry.tracer_provider.tracer("twitter-clone-web")
   end
 
   private
