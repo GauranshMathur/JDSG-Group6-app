@@ -21,13 +21,49 @@ class RankedFeed
   end
 
   def self.bust_cache
-    Rails.cache.delete(CACHE_KEY)
+    # Worth a span of its own: every like, repost, reply and post lands here,
+    # so the rate of invalidation is what decides how often a reader pays for a
+    # rebuild rather than a cache hit (F-8.2).
+    tracer.in_span("ranked_feed.bust") do
+      Rails.cache.delete(CACHE_KEY)
+    end
+  end
+
+  def self.tracer
+    Rails.application.config.x.tracer || OpenTelemetry.tracer_provider.tracer("twitter-clone-web")
   end
 
   private
 
+  def tracer
+    self.class.tracer
+  end
+
+  # Reading the feed and rebuilding it are separate spans on purpose: the read
+  # is what a request waits for, and it is not free even on a hit, because the
+  # cached value has to be deserialized in full. Nesting the rebuild inside it
+  # keeps both visible and shows which of the two a given request paid for.
   def cached_feed
-    Rails.cache.fetch(CACHE_KEY, expires_in: CACHE_TTL) { compute_feed }
+    tracer.in_span("ranked_feed.read") do |span|
+      hit = true
+
+      feed = Rails.cache.fetch(CACHE_KEY, expires_in: CACHE_TTL) do
+        hit = false
+        rebuild
+      end
+
+      span.set_attribute("ranked_feed.cache_hit", hit)
+      span.set_attribute("ranked_feed.item_count", feed.size)
+      feed
+    end
+  end
+
+  def rebuild
+    tracer.in_span("ranked_feed.rebuild") do |span|
+      feed = compute_feed
+      span.set_attribute("ranked_feed.item_count", feed.size)
+      feed
+    end
   end
 
   def compute_feed

@@ -44,6 +44,35 @@ even inside a transaction, which put a 100,000-post seed into the hours. Replies
 the app really does. Counter caches were verified exact against `COUNT(*)` for all 2,634
 posts of a 1,000-post run.
 
+## Telemetry
+
+The app is instrumented with OpenTelemetry ([ADR 0009](adr/0009-opentelemetry.md), F-8.2).
+Rails auto-instrumentation supplies the request-level signals — request duration, database
+time, query counts, view rendering — and `RankedFeed` carries custom spans for what this
+milestone is actually measuring:
+
+| Span | Attributes | What it tells you |
+| --- | --- | --- |
+| `ranked_feed.read` | `cache_hit`, `item_count` | What a request waited for, and whether it paid for a rebuild |
+| `ranked_feed.rebuild` | `item_count` | How long a full recompute took, and how much it produced |
+| `ranked_feed.bust` | — | Cache invalidation, one per like, repost, reply or post |
+
+The exporter is configuration, not code, so the same instrumentation serves a local run and
+a collector later:
+
+```bash
+# print spans to stdout
+OTEL_TRACES_EXPORTER=console bin/rails server
+
+# send them to a collector
+OTEL_TRACES_EXPORTER=otlp OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318 bin/rails server
+```
+
+Unset means nothing is emitted: the SDK is configured and instrumentation loaded, but a
+developer running the app needs no collector and CI does not pay to serialize spans nobody
+reads. Specs attach their own in-memory exporter, which is how the feed signals are
+asserted in `spec/services/ranked_feed_telemetry_spec.rb` rather than eyeballed in a log.
+
 ## Baseline: the ranked feed at 10,000 posts
 
 Taken with slice A's seed, before any telemetry or k6 work, as the reason the rest of the
@@ -75,6 +104,29 @@ built to measure.
 
 By contrast the mega-account profile page at 873 posts is 63 ms: `ProfileFeed` scopes to
 one user and paginates in SQL, so it never had this shape of problem.
+
+### Over HTTP, with telemetry
+
+The numbers above come from calling `RankedFeed` directly. With slice B's instrumentation
+the same seed can be measured the way a browser experiences it — `OTEL_TRACES_EXPORTER=console`,
+one `GET /` against a warm cache:
+
+| Span | Duration |
+| --- | --- |
+| `GET /` — what the browser waits for | **2,105 ms** |
+| ↳ `ranked_feed.read`, `cache_hit=true`, 43,058 items | **1,627 ms** |
+| `ranked_feed.rebuild` at boot (`RankedFeed.warm`) | 7,275 ms |
+| `render_partial.action_view` spans in one request | 107 |
+
+Two things this adds to the direct-call numbers. **A warm feed page is a two-second
+request**, and 77% of it is the cached-feed read — the same 1.4-second deserialization
+seen directly, now confirmed as the dominant cost of a real request rather than an
+artifact of benchmarking. And boot is not free either: warming the cache in an initializer
+costs seven seconds before the process serves anything.
+
+The 107 partial renders for 20 posts are not a problem at this scale — roughly five
+partials per post is what the markup asks for — but they are worth knowing about before
+anyone reads the remaining 400 ms as mysterious.
 
 **Not fixed here.** Milestone 8 measures. Improvements land afterwards as their own pull
 requests, each citing the number above that it moves.
