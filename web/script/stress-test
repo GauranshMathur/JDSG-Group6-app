@@ -14,7 +14,25 @@
 #
 # The scenarios need to know which account is the mega-account and which post to
 # like, and those are properties of the seeded data rather than constants, so
-# they are discovered here and passed to k6 as environment variables.
+# they are discovered here and passed to k6 as environment variables. Discovery
+# reads the local database directly, so the app being measured has to be the one
+# this checkout is configured against, however the load reaches it.
+#
+# Running the load from k6 Cloud instead of this machine:
+#
+#   k6 cloud login --token <token>
+#   ngrok http 3000                                  # or any tunnel
+#   DEV_ALLOWED_HOSTS=<subdomain>.ngrok-free.dev bin/rails server
+#   K6_MODE=cloud script/stress-test https://<subdomain>.ngrok-free.dev
+#
+# Be careful what that measures. Load generated in a cloud region, crossing the
+# public internet and a free tunnel to reach a laptop, spends most of its
+# latency budget on the journey — the tunnel is in the measurement, and on a
+# free tier it rate-limits too. It is the right tool for checking the scenarios
+# run somewhere other than here; it is the wrong tool for a number you intend to
+# compare against the local runs. Numbers meant to describe a deployment come
+# from I-1g in the infrastructure repository, where load and app sit in the same
+# cluster.
 
 set -euo pipefail
 
@@ -56,8 +74,19 @@ if [ -z "$MEGA_USER" ]; then
   exit 1
 fi
 
-echo "=== Running scenarios (about two minutes) ==="
-k6 run \
+K6_MODE="${K6_MODE:-local}"
+
+if [ "$K6_MODE" = "cloud" ]; then
+  echo "=== Running scenarios on k6 Cloud (about two minutes) ==="
+  echo "    Load originates in the cloud and reaches $BASE_URL over the public"
+  echo "    internet, so the transport is part of every number below."
+  K6_COMMAND=(k6 cloud run)
+else
+  echo "=== Running scenarios (about two minutes) ==="
+  K6_COMMAND=(k6 run)
+fi
+
+"${K6_COMMAND[@]}" \
   --env "BASE_URL=$BASE_URL" \
   --env "MEGA_USER=$MEGA_USER" \
   --env "LIKE_POST_ID=$LIKE_POST_ID" \

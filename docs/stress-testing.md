@@ -133,6 +133,45 @@ The 107 partial renders for 20 posts are not a problem at this scale — roughly
 partials per post is what the markup asks for — but they are worth knowing about before
 anyone reads the remaining 400 ms as mysterious.
 
+## Running the load from somewhere else
+
+The scenarios take a base URL, so the load does not have to come from the machine running
+the app — `k6 cloud run` against a tunnelled development server works, and
+`script/stress-test` supports it:
+
+```bash
+k6 cloud login --token <token>
+ngrok http 3000                                       # any tunnel will do
+
+# Rails blocks unrecognised Host headers in development, so name the tunnel:
+DEV_ALLOWED_HOSTS=<subdomain>.ngrok-free.dev bin/rails server
+
+K6_MODE=cloud script/stress-test https://<subdomain>.ngrok-free.dev
+```
+
+`DEV_ALLOWED_HOSTS` is comma-separated and read at boot. It exists because
+`ActionDispatch::HostAuthorization` is worth keeping — it is what stops a hostile page in
+your browser from pointing its own domain at 127.0.0.1 and talking to your development
+server — so the tunnel is named rather than the guard switched off. A leading dot allows a
+whole domain (`.ngrok-free.dev`), which survives the subdomain changing between sessions
+and is a correspondingly wider opening.
+
+**What a cloud run is and is not good for.** Load generated in a cloud region, crossing the
+public internet and a free tunnel to reach a laptop, spends most of its latency budget on
+the journey; a free tunnel also rate-limits. It answers "do the scenarios run from
+somewhere other than my machine" and "does the app hold up when requests arrive over a real
+network". It does not produce a number comparable with the local runs below, and it is not
+a deployment measurement — those come from I-1g in the infrastructure repository, where the
+load generator and the app sit in the same cluster.
+
+**One thing the tunnel forced, worth keeping regardless.** A free ngrok tunnel answers
+anything browser-shaped with an interstitial warning page, served as a 200. The scenarios
+originally checked only the status code, so a tunnelled run could have reported four green
+scenarios having measured nothing but ngrok. Every request now sends
+`ngrok-skip-browser-warning`, and every check asserts a marker only that page contains —
+`feed__` for the feed, the username for a profile, `Search` for search. A Rails "Blocked
+host" page or a proxy error fails those checks rather than passing as a fast 200.
+
 ## Under concurrent load: the k6 scenarios
 
 Slice C (F-8.3), run with `script/stress-test` against the 10,000-post seed. Four
