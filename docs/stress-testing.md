@@ -146,29 +146,54 @@ shape. The absolute numbers describe this setup, not a deployment; what they are
 is comparing scenarios against each other and finding the shape of the problem. Numbers
 that describe a deployment come from I-1g in the infrastructure repository, on the cluster.
 
+Run on two machines against the same 10,000-post seed, which is the more useful thing to
+have: one is a container in a sandbox, the other an Apple Silicon laptop roughly four times
+quicker. The absolute numbers differ by that factor; the *ratios* do not, and the ratios
+are the finding.
+
+**Machine A — sandbox container**, 317 checks, 100% passing:
+
 | Scenario | VUs | avg | p50 | p95 | max |
 | --- | --- | --- | --- | --- | --- |
 | `feed_warm` — steady reads, warm cache | 5 | 7.10 s | 7.04 s | 9.72 s | 9.86 s |
 | `feed_churn` — same reads, writer liking throughout | 5 + 1 | 7.01 s | 7.19 s | 10.06 s | 11.17 s |
-| `profile` — mega-account, 873 posts | 5 | 404 ms | 410 ms | 638 ms | 867 ms |
+| `profile` — mega-account | 5 | 404 ms | 410 ms | 638 ms | 867 ms |
 | `search` — `?q=the` against the volume | 5 | 133 ms | 97 ms | 397 ms | 794 ms |
 
-317 checks, 100% passing — nothing errored, everything was merely slow.
+**Machine B — Apple Silicon laptop**, 514 checks, 100% passing:
+
+| Scenario | VUs | avg | p50 | p95 | max |
+| --- | --- | --- | --- | --- | --- |
+| `feed_warm` | 5 | 1.71 s | 2.14 s | 2.31 s | 2.38 s |
+| `feed_churn` | 5 + 1 | 1.53 s | 1.50 s | 2.30 s | 2.98 s |
+| `profile` — mega-account, 759 posts | 5 | 70 ms | 68 ms | 131 ms | 188 ms |
+| `search` | 5 | 31 ms | 24 ms | 70 ms | 127 ms |
+
+Nothing errored on either machine — 831 checks between them, all passing. Everything was
+merely slow.
+
+**What survives the change of hardware.** The feed costs 24× a profile page on the fast
+machine and 18× on the slow one; against search it is 55× and 53×. Four times the CPU buys
+four times less waiting and changes nothing about the shape. And the feed still misses a
+two-second budget at p95 on the faster machine — with five users, on a proof of concept,
+against ten thousand posts.
 
 **Two findings, and the second overturns an assumption.**
 
-*Concurrency multiplies the feed's cost rather than absorbing it.* One request measured
-2.1 s; five concurrent readers see 7 s. The per-request work — deserializing a 4.8 MB
-cached array — is CPU-bound and holds its thread for the duration, so with three threads
-the sixth request is queued behind two full deserializations before it starts. The feed
-does not degrade gracefully under concurrency; it queues.
+*Concurrency multiplies the feed's cost rather than absorbing it.* On machine A a single
+request measured 2.1 s and five concurrent readers saw 7 s. The per-request work —
+deserializing a 4.8 MB cached array — is CPU-bound and holds its thread for the duration,
+so with three threads the sixth request queues behind two full deserializations before it
+starts. The feed does not degrade gracefully under concurrency; it queues.
 
 *Invalidation is not the problem.* The churn scenario was built expecting the write traffic
 to be the expensive part, on the reasoning that every like busts the cache and forces a
-rebuild. It measured **the same as the warm scenario** — 7.01 s against 7.10 s. The
-rebuild frequency barely matters, because the dominant cost is paid on *every* request
-whether it hits or misses. That points any improvement work away from "bust the cache less
-often" and towards "stop deserializing the whole feed to serve twenty items".
+rebuild. On both machines it measured **no worse than the warm scenario** — 7.01 s against
+7.10 s on A, 1.53 s against 1.71 s on B, churn marginally ahead each time and well inside
+the noise. Two independent runs agreeing is what makes this worth acting on: the rebuild
+frequency barely matters, because the dominant cost is paid on *every* request whether it
+hits or misses. That points any improvement work away from "bust the cache less often" and
+towards "stop deserializing the whole feed to serve twenty items".
 
 Profile and search stay fast under the same concurrency, which is what makes the
 comparison worth having: both scope and paginate in SQL, and neither holds a thread doing
@@ -178,5 +203,3 @@ Ruby work proportional to the size of the database.
 per-page cache rather than one whole-feed key, or scoring in SQL — land afterwards as
 their own pull requests, each citing the number above that it moves.
 
-**Not fixed here.** Milestone 8 measures. Improvements land afterwards as their own pull
-requests, each citing the number above that it moves.
