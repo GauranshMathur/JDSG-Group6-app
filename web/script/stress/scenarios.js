@@ -25,6 +25,19 @@ const EMAIL = __ENV.LOAD_EMAIL || "";
 const PASSWORD = __ENV.LOAD_PASSWORD || "loadtest1";
 const SEARCH_TERM = __ENV.SEARCH_TERM || "the";
 
+// Sent on every request. A free ngrok tunnel answers an interstitial warning
+// page to anything that looks like a browser, and that page is a 200 — so
+// without this header a run through a tunnel can report four green scenarios
+// having measured nothing but ngrok. Harmless when there is no tunnel.
+const PARAMS = { headers: { "ngrok-skip-browser-warning": "1" } };
+
+// Checking the status alone is not enough for the same reason: an interstitial,
+// a proxy error or a Rails "Blocked host" page are all served with a body, and
+// some with a 200. Each scenario asserts something only its own page contains.
+function ok(res, marker) {
+  return res.status === 200 && res.body.includes(marker);
+}
+
 // One trend per scenario. k6's built-in http_req_duration aggregates every
 // request in the run, which would blend a 2-second feed page into the same
 // number as a 60ms profile page and describe neither.
@@ -92,29 +105,29 @@ function csrfToken(body) {
 }
 
 function signIn() {
-  const form = http.get(`${BASE}/session/new`);
+  const form = http.get(`${BASE}/session/new`, PARAMS);
   const token = csrfToken(form.body);
 
   const res = http.post(`${BASE}/session`, {
     authenticity_token: token,
     email_address: EMAIL,
     password: PASSWORD,
-  });
+  }, PARAMS);
 
   return { signedIn: res.status === 200 || res.status === 302 };
 }
 
 export function readFeed() {
-  const res = http.get(`${BASE}/`);
+  const res = http.get(`${BASE}/`, PARAMS);
   feedWarm.add(res.timings.duration);
-  check(res, { "feed 200": (r) => r.status === 200 });
+  check(res, { "feed served the app": (r) => ok(r, "feed__") });
   sleep(0.5);
 }
 
 export function readFeedUnderChurn() {
-  const res = http.get(`${BASE}/`);
+  const res = http.get(`${BASE}/`, PARAMS);
   feedChurn.add(res.timings.duration);
-  check(res, { "feed 200 under churn": (r) => r.status === 200 });
+  check(res, { "feed served the app under churn": (r) => ok(r, "feed__") });
   sleep(0.5);
 }
 
@@ -124,32 +137,32 @@ export function readFeedUnderChurn() {
 export function likeAndUnlike() {
   if (!EMAIL || !LIKE_POST_ID) return;
 
-  const form = http.get(`${BASE}/posts/${LIKE_POST_ID}`);
+  const form = http.get(`${BASE}/posts/${LIKE_POST_ID}`, PARAMS);
   const token = csrfToken(form.body);
   if (!token) return;
 
-  http.post(`${BASE}/posts/${LIKE_POST_ID}/like`, { authenticity_token: token });
+  http.post(`${BASE}/posts/${LIKE_POST_ID}/like`, { authenticity_token: token }, PARAMS);
   sleep(1);
   http.post(`${BASE}/posts/${LIKE_POST_ID}/like`, {
     authenticity_token: token,
     _method: "delete",
-  });
+  }, PARAMS);
   sleep(1);
 }
 
 export function readProfile() {
   if (!MEGA_USER) return;
 
-  const res = http.get(`${BASE}/@${MEGA_USER}`);
+  const res = http.get(`${BASE}/@${MEGA_USER}`, PARAMS);
   profile.add(res.timings.duration);
-  check(res, { "profile 200": (r) => r.status === 200 });
+  check(res, { "profile served the app": (r) => ok(r, MEGA_USER) });
   sleep(0.5);
 }
 
 export function readSearch() {
-  const res = http.get(`${BASE}/search?q=${encodeURIComponent(SEARCH_TERM)}`);
+  const res = http.get(`${BASE}/search?q=${encodeURIComponent(SEARCH_TERM)}`, PARAMS);
   search.add(res.timings.duration);
-  check(res, { "search 200": (r) => r.status === 200 });
+  check(res, { "search served the app": (r) => ok(r, "Search") });
   sleep(0.5);
 }
 
