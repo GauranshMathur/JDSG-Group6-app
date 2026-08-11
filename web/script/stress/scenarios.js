@@ -47,6 +47,13 @@ const profile = new Trend("scenario_profile", true);
 const search = new Trend("scenario_search", true);
 
 export const options = {
+  // Names the run in the Grafana Cloud k6 dashboard. Without it every upload
+  // arrives called "scenarios.js", and the point of uploading is being able to
+  // tell one run from another later.
+  cloud: {
+    name: `twitter-clone feed stress${__ENV.RUN_LABEL ? ` — ${__ENV.RUN_LABEL}` : ""}`,
+  },
+
   // Thresholds are recorded, not enforced: this milestone measures and does not
   // fix, so a slow feed is the finding rather than a failure. They exist so the
   // summary marks which numbers are out of line.

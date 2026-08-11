@@ -133,11 +133,26 @@ The 107 partial renders for 20 posts are not a problem at this scale — roughly
 partials per post is what the markup asks for — but they are worth knowing about before
 anyone reads the remaining 400 ms as mysterious.
 
-## Running the load from somewhere else
+## Sending results to Grafana Cloud k6
 
-The scenarios take a base URL, so the load does not have to come from the machine running
-the app — `k6 cloud run` against a tunnelled development server works, and
-`script/stress-test` supports it:
+Two modes, and the difference matters more than the names suggest.
+
+**`K6_MODE=stream` — generate the load here, upload the results.** Almost always the one
+you want. The load still comes from this machine against localhost, so the numbers stay
+comparable with every local run recorded above; the dashboard is the only thing that
+changes. No tunnel involved.
+
+```bash
+k6 cloud login --token <token>
+K6_MODE=stream script/stress-test
+
+# label the run so it is findable in the dashboard later
+RUN_LABEL="10k baseline" K6_MODE=stream script/stress-test
+```
+
+**`K6_MODE=cloud` — generate the load in the cloud.** A different measurement, not a nicer
+version of the same one. The app has to be reachable from the internet, which for a
+development server means a tunnel:
 
 ```bash
 k6 cloud login --token <token>
