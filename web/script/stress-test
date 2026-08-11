@@ -1,0 +1,66 @@
+#!/usr/bin/env bash
+# Milestone 8 slice C (F-8.3) — run the k6 stress scenarios against a locally
+# running app.
+#
+# Usage:
+#   cd web
+#   bin/rails runner script/seed-load-test 10000   # if not already seeded
+#   bin/rails server                               # in another terminal
+#   script/stress-test                             # here
+#
+#   script/stress-test http://localhost:3000       # explicit base URL
+#
+# Needs k6 on PATH (ADR 0008): https://grafana.com/docs/k6/latest/set-up/install-k6/
+#
+# The scenarios need to know which account is the mega-account and which post to
+# like, and those are properties of the seeded data rather than constants, so
+# they are discovered here and passed to k6 as environment variables.
+
+set -euo pipefail
+
+BASE_URL="${1:-http://localhost:3000}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+if ! command -v k6 >/dev/null 2>&1; then
+  echo "k6 is not on PATH. See https://grafana.com/docs/k6/latest/set-up/install-k6/" >&2
+  exit 1
+fi
+
+if ! curl -fsS -o /dev/null "$BASE_URL/up"; then
+  echo "No app answering at $BASE_URL — start it with 'bin/rails server'." >&2
+  exit 1
+fi
+
+echo "=== Discovering seeded fixtures ==="
+
+# One runner call rather than three: booting Rails is the expensive part.
+FIXTURES="$(bin/rails runner '
+  mega = User.joins(:posts).group("users.id").order(Arel.sql("COUNT(posts.id) DESC")).first
+  post = Post.top_level.order(likes_count: :desc).first
+  loader = User.order(:id).first
+  puts [ mega&.username, post&.id, loader&.email_address ].join("|")
+' 2>/dev/null | tail -1)"
+
+MEGA_USER="$(echo "$FIXTURES" | cut -d"|" -f1)"
+LIKE_POST_ID="$(echo "$FIXTURES" | cut -d"|" -f2)"
+LOAD_EMAIL="$(echo "$FIXTURES" | cut -d"|" -f3)"
+
+echo "  Mega-account: @${MEGA_USER:-<none>}"
+echo "  Post to like: ${LIKE_POST_ID:-<none>}"
+echo "  Writer signs in as: ${LOAD_EMAIL:-<none>}"
+echo
+
+if [ -z "$MEGA_USER" ]; then
+  echo "The database looks unseeded. Run:" >&2
+  echo "  bin/rails runner script/seed-load-test 10000" >&2
+  exit 1
+fi
+
+echo "=== Running scenarios (about two minutes) ==="
+k6 run \
+  --env "BASE_URL=$BASE_URL" \
+  --env "MEGA_USER=$MEGA_USER" \
+  --env "LIKE_POST_ID=$LIKE_POST_ID" \
+  --env "LOAD_EMAIL=$LOAD_EMAIL" \
+  --env "LOAD_PASSWORD=${LOAD_PASSWORD:-loadtest1}" \
+  "$SCRIPT_DIR/stress/scenarios.js"

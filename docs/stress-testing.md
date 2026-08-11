@@ -128,5 +128,50 @@ The 107 partial renders for 20 posts are not a problem at this scale — roughly
 partials per post is what the markup asks for — but they are worth knowing about before
 anyone reads the remaining 400 ms as mysterious.
 
+## Under concurrent load: the k6 scenarios
+
+Slice C (F-8.3), run with `script/stress-test` against the 10,000-post seed. Four
+scenarios, staggered rather than concurrent, because the churn scenario deliberately busts
+the cache and the warm scenario must not have that happening to it.
+
+**Read the caveat first.** These come from a development-mode server with
+`RAILS_MAX_THREADS=3` and a single Puma process, on the development machine. Development
+mode carries code reloading and no eager loading, and three threads is not a production
+shape. The absolute numbers describe this setup, not a deployment; what they are good for
+is comparing scenarios against each other and finding the shape of the problem. Numbers
+that describe a deployment come from I-1g in the infrastructure repository, on the cluster.
+
+| Scenario | VUs | avg | p50 | p95 | max |
+| --- | --- | --- | --- | --- | --- |
+| `feed_warm` — steady reads, warm cache | 5 | 7.10 s | 7.04 s | 9.72 s | 9.86 s |
+| `feed_churn` — same reads, writer liking throughout | 5 + 1 | 7.01 s | 7.19 s | 10.06 s | 11.17 s |
+| `profile` — mega-account, 873 posts | 5 | 404 ms | 410 ms | 638 ms | 867 ms |
+| `search` — `?q=the` against the volume | 5 | 133 ms | 97 ms | 397 ms | 794 ms |
+
+317 checks, 100% passing — nothing errored, everything was merely slow.
+
+**Two findings, and the second overturns an assumption.**
+
+*Concurrency multiplies the feed's cost rather than absorbing it.* One request measured
+2.1 s; five concurrent readers see 7 s. The per-request work — deserializing a 4.8 MB
+cached array — is CPU-bound and holds its thread for the duration, so with three threads
+the sixth request is queued behind two full deserializations before it starts. The feed
+does not degrade gracefully under concurrency; it queues.
+
+*Invalidation is not the problem.* The churn scenario was built expecting the write traffic
+to be the expensive part, on the reasoning that every like busts the cache and forces a
+rebuild. It measured **the same as the warm scenario** — 7.01 s against 7.10 s. The
+rebuild frequency barely matters, because the dominant cost is paid on *every* request
+whether it hits or misses. That points any improvement work away from "bust the cache less
+often" and towards "stop deserializing the whole feed to serve twenty items".
+
+Profile and search stay fast under the same concurrency, which is what makes the
+comparison worth having: both scope and paginate in SQL, and neither holds a thread doing
+Ruby work proportional to the size of the database.
+
+**Not fixed here.** Milestone 8 measures. The improvements these numbers argue for — a
+per-page cache rather than one whole-feed key, or scoring in SQL — land afterwards as
+their own pull requests, each citing the number above that it moves.
+
 **Not fixed here.** Milestone 8 measures. Improvements land afterwards as their own pull
 requests, each citing the number above that it moves.
