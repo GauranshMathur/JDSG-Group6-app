@@ -150,6 +150,15 @@ K6_MODE=stream script/stress-test
 RUN_LABEL="10k baseline" K6_MODE=stream script/stress-test
 ```
 
+The first streamed run (Grafana Cloud test run 8349790 — machine B below, the same
+10,000-post seed) behaved as the mode promises: 525 requests, none failed, 509/509 content
+checks, aggregate p95 2.21 s, and one of the four thresholds crossed. The aggregate leaves
+no other candidate than `scenario_feed_warm`'s p(95) < 2000 ms — the local run below
+crosses it at 2.31 s while the other three scenarios sit an order of magnitude inside
+their budgets. Streaming changed where the results went and nothing about what they
+measured, which is the property that makes the dashboard usable for before/after
+comparison when the improvement work lands.
+
 **`K6_MODE=cloud` — generate the load in the cloud.** A different measurement, not a nicer
 version of the same one. The app has to be reachable from the internet, which for a
 development server means a tunnel:
