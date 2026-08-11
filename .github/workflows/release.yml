@@ -176,6 +176,12 @@ jobs:
             ${{ steps.image.outputs.name }}:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          # Same reasoning as ci.yml: the `base` stage is where `apt-get
+          # upgrade` pulls operating system security fixes, and a cached copy
+          # upgrades against stale package lists. It matters more here — this
+          # is the image that actually gets published and pulled.
+          no-cache-filters: base
+          pull: true
 
       - name: Report what was published
         run: |

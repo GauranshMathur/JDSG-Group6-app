@@ -118,6 +118,17 @@ jobs:
           tags: twitter-clone-web:${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          # The `base` stage runs `apt-get upgrade`, which is where operating
+          # system security fixes enter the image. Served from the build cache
+          # it upgrades against whatever package lists that cached layer was
+          # built with, so a fix published afterwards is never installed and the
+          # scan below fails on a CVE the Dockerfile already believes it has
+          # patched. Excluding just this stage keeps the fix current while every
+          # other layer — bundle install, asset precompile — still caches.
+          no-cache-filters: base
+          # Refresh the base image too: a rebuilt ruby:slim carries fixes that
+          # no amount of apt-get in our own layers can supply.
+          pull: true
 
       # HIGH and CRITICAL fail; MEDIUM and LOW are reported without blocking. A
       # failure here is usually inherited from the base image rather than
