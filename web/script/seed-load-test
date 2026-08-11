@@ -1,22 +1,34 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
-# Populates the database with 1,000 users and 1,000 posts for load testing.
+# Populates the database with shaped load-test data (F-8.1).
 #
 # Usage:
-#   cd web && bin/rails runner script/seed-load-test
+#   cd web && bin/rails runner script/seed-load-test              # 10,000 posts
+#   cd web && bin/rails runner script/seed-load-test 100000       # 100,000 posts
+#   cd web && bin/rails runner script/seed-load-test 10000 --seed=7
+#
+# The shape — how many accounts of each size, and how engagement is
+# distributed across posts — comes from LoadTest::Plan, which is specced.
+# This script only performs the writes.
 #
 # Works on any supported database (SQLite, PostgreSQL). Runs outside the
 # application's request cycle, so it cannot interfere with a running server.
 #
-# Idempotent: skips creation when the target counts are already met.
+# Not idempotent in the way the old flat seed was: it seeds a *shape*, so
+# re-running against a populated database appends rather than topping up.
+# Reset first with `bin/rails db:reset` when you want a clean scale.
 
 require "securerandom"
 
-USER_COUNT  = 1_000
-POST_COUNT  = 1_000
-PASSWORD    = "loadtest1"
-BATCH_SIZE  = 100
+DEFAULT_POSTS = 10_000
+PASSWORD      = "loadtest1"
+
+posts_arg = ARGV.find { |a| a !~ /^--/ }
+seed_arg  = ARGV.find { |a| a.start_with?("--seed=") }
+
+TARGET_POSTS = (posts_arg || DEFAULT_POSTS).to_i
+SEED         = (seed_arg&.split("=")&.last || 1).to_i
 
 LOREM = [
   "The quick brown fox jumps over the lazy dog",
@@ -65,151 +77,164 @@ BIOS = [
   nil
 ].freeze
 
-def random_body
-  base = LOREM.sample
-  if rand < 0.4
-    tags = HASHTAGS.sample(rand(1..3)).map { |t| "##{t}" }.join(" ")
+rng = Random.new(SEED)
+
+def random_body(rng)
+  base = LOREM[rng.rand(LOREM.size)]
+  if rng.rand < 0.4
+    tags = HASHTAGS.sample(rng.rand(1..3), random: rng).map { |t| "##{t}" }.join(" ")
     base = "#{base} #{tags}"
   end
   base.truncate(280)
 end
 
 def progress(label, current, total)
-  print "\r  #{label}: #{current}/#{total}" if current % 50 == 0 || current == total
+  print "\r  #{label}: #{current}/#{total}" if current % 100 == 0 || current == total
 end
+
+plan = LoadTest::Plan.new(posts: TARGET_POSTS, seed: SEED)
 
 puts "=== Load-test seed ==="
+puts "  Scale:    #{plan.total_posts} top-level posts (requested #{TARGET_POSTS})"
+puts "  Accounts: #{plan.account_count}"
+LoadTest::Plan::SHAPES.each_key do |shape|
+  group = plan.accounts.select { |a| a.shape == shape }
+  next if group.empty?
+
+  sizes = group.map(&:post_count)
+  puts format("    %-8s %5d accounts, %d–%d posts each", shape, group.size, sizes.min, sizes.max)
+end
+puts "  Seed:     #{SEED} (same seed reproduces this run)"
 puts
 
-existing_users = User.count
-if existing_users >= USER_COUNT
-  puts "Users: #{existing_users} already exist (target #{USER_COUNT}), skipping."
-else
-  users_to_create = USER_COUNT - existing_users
-  puts "Creating #{users_to_create} users..."
+# One transaction around the whole seed. Without it every insert is its own
+# SQLite transaction with its own fsync, which dominated the runtime: 5,000
+# records took a minute, putting a 100,000-post run into the hours.
+ActiveRecord::Base.transaction do
+# --- Accounts -------------------------------------------------------------
 
-  created = 0
-  users_to_create.times do |i|
-    n = existing_users + i + 1
-    username = "user#{n}"
-    next if User.exists?(username: username)
+offset = User.count
+puts "Creating #{plan.account_count} users..."
 
-    User.create!(
-      username: username,
-      email_address: "#{username}@loadtest.example.com",
-      password: PASSWORD,
-      display_name: rand < 0.7 ? "#{DISPLAY_NAMES.sample} #{n}" : nil,
-      bio: BIOS.sample
-    )
-    created += 1
-    progress("Users", created, users_to_create)
-  end
-  puts
+user_ids_by_account = []
+plan.accounts.each_with_index do |account, i|
+  n = offset + i + 1
+  user = User.create!(
+    username: "user#{n}",
+    email_address: "user#{n}@loadtest.example.com",
+    password: PASSWORD,
+    display_name: rng.rand < 0.7 ? "#{DISPLAY_NAMES[rng.rand(DISPLAY_NAMES.size)]} #{n}" : nil,
+    bio: BIOS[rng.rand(BIOS.size)]
+  )
+  user_ids_by_account << [ user.id, account ]
+  progress("Users", i + 1, plan.account_count)
 end
+puts
 
-all_user_ids = User.pluck(:id)
+# --- Posts ----------------------------------------------------------------
 
-existing_posts = Post.count
-if existing_posts >= POST_COUNT
-  puts "Posts: #{existing_posts} already exist (target #{POST_COUNT}), skipping."
-else
-  posts_to_create = POST_COUNT - existing_posts
-  puts "Creating #{posts_to_create} posts..."
+puts "Creating #{plan.total_posts} posts..."
 
-  created = 0
-  posts_to_create.times do |i|
+post_ids = []
+created = 0
+user_ids_by_account.each do |user_id, account|
+  account.post_count.times do
+    post = Post.create!(
+      user_id: user_id,
+      body: random_body(rng),
+      created_at: rng.rand(30 * 24 * 3600).seconds.ago
+    )
+    post_ids << post.id
+    created += 1
+    progress("Posts", created, plan.total_posts)
+  end
+end
+puts
+
+all_user_ids = user_ids_by_account.map(&:first)
+
+# --- Engagement -----------------------------------------------------------
+#
+# The plan's weights are sorted heaviest-first; the posts are not. Shuffling
+# the weights onto posts keeps the distribution while scattering the popular
+# ones through the timeline rather than clustering them at one end.
+
+weights = plan.engagement_weights.first(post_ids.size).shuffle(random: rng)
+max_weight = weights.max
+max_weight = 1.0 if max_weight.nil? || max_weight.zero?
+
+# The heaviest post gets roughly this many likes; everything else scales down.
+PEAK_LIKES   = 400
+PEAK_REPOSTS = 120
+PEAK_REPLIES = 60
+
+puts "Creating engagement..."
+
+# Likes and reposts are the bulk of the rows and carry no logic worth
+# exercising — a like is a join row and a counter bump. Inserting them one
+# ActiveRecord object at a time measured ~5ms each even inside a transaction,
+# which put a 100,000-post seed into the hours. They go in with insert_all and
+# the counter caches are reconciled below in one statement per column.
+#
+# Replies stay on Post.create! because they are posts: they run the body
+# validation and the hashtag parsing that the app really does.
+
+now = Time.current
+like_rows = []
+repost_rows = []
+replies = 0
+
+post_ids.each_with_index do |post_id, i|
+  weight = weights[i] / max_weight
+  next if weight.zero?
+
+  all_user_ids.sample((weight * PEAK_LIKES).round, random: rng).each do |user_id|
+    like_rows << { user_id: user_id, post_id: post_id, created_at: now, updated_at: now }
+  end
+
+  all_user_ids.sample((weight * PEAK_REPOSTS).round, random: rng).each do |user_id|
+    repost_rows << { user_id: user_id, post_id: post_id, created_at: now, updated_at: now }
+  end
+
+  (weight * PEAK_REPLIES).round.times do
     Post.create!(
-      user_id: all_user_ids.sample,
-      body: random_body,
-      created_at: rand(30.days).seconds.ago
+      user_id: all_user_ids[rng.rand(all_user_ids.size)],
+      body: random_body(rng),
+      parent_id: post_id,
+      created_at: rng.rand(30 * 24 * 3600).seconds.ago
     )
-    created += 1
-    progress("Posts", created, posts_to_create)
+    replies += 1
   end
-  puts
+
+  progress("Engaged posts", i + 1, post_ids.size)
 end
+puts
 
-all_post_ids = Post.top_level.pluck(:id)
+like_rows.each_slice(5_000) { |slice| Like.insert_all(slice) }
+repost_rows.each_slice(5_000) { |slice| Repost.insert_all(slice) }
 
-reply_count = (POST_COUNT * 0.3).to_i
-existing_replies = Post.where.not(parent_id: nil).count
-if existing_replies >= reply_count
-  puts "Replies: #{existing_replies} already exist (target #{reply_count}), skipping."
-else
-  replies_to_create = reply_count - existing_replies
-  puts "Creating #{replies_to_create} replies..."
-
-  created = 0
-  replies_to_create.times do
-    Post.create!(
-      user_id: all_user_ids.sample,
-      body: random_body,
-      parent_id: all_post_ids.sample,
-      created_at: rand(30.days).seconds.ago
-    )
-    created += 1
-    progress("Replies", created, replies_to_create)
-  end
-  puts
-end
-
-like_count = (POST_COUNT * 2.5).to_i
-existing_likes = Like.count
-if existing_likes >= like_count
-  puts "Likes: #{existing_likes} already exist (target #{like_count}), skipping."
-else
-  likes_to_create = like_count - existing_likes
-  puts "Creating #{likes_to_create} likes..."
-
-  all_post_ids_full = Post.pluck(:id)
-  created = 0
-  attempts = 0
-  max_attempts = likes_to_create * 3
-
-  while created < likes_to_create && attempts < max_attempts
-    attempts += 1
-    begin
-      Like.create!(user_id: all_user_ids.sample, post_id: all_post_ids_full.sample)
-      created += 1
-      progress("Likes", created, likes_to_create)
-    rescue ActiveRecord::RecordInvalid, ActiveRecord::RecordNotUnique
-      next
-    end
-  end
-  puts
-end
-
-repost_count = (POST_COUNT * 0.8).to_i
-existing_reposts = Repost.count
-if existing_reposts >= repost_count
-  puts "Reposts: #{existing_reposts} already exist (target #{repost_count}), skipping."
-else
-  reposts_to_create = repost_count - existing_reposts
-  puts "Creating #{reposts_to_create} reposts..."
-
-  created = 0
-  attempts = 0
-  max_attempts = reposts_to_create * 3
-
-  while created < reposts_to_create && attempts < max_attempts
-    attempts += 1
-    begin
-      Repost.create!(user_id: all_user_ids.sample, post_id: all_post_ids.sample)
-      created += 1
-      progress("Reposts", created, reposts_to_create)
-    rescue ActiveRecord::RecordInvalid, ActiveRecord::RecordNotUnique
-      next
-    end
-  end
-  puts
+# insert_all skips the counter_cache callbacks, so the counts the ranked feed
+# scores on would all be zero. Recompute them in one pass per column — plain
+# correlated subqueries, so this stays adapter-agnostic (N-1.2).
+puts "Reconciling counter caches..."
+Post.update_all("likes_count = (SELECT COUNT(*) FROM likes WHERE likes.post_id = posts.id)")
+Post.update_all("reposts_count = (SELECT COUNT(*) FROM reposts WHERE reposts.post_id = posts.id)")
+Post.update_all("replies_count = (SELECT COUNT(*) FROM posts children WHERE children.parent_id = posts.id)")
 end
 
 puts
 puts "=== Done ==="
 puts "  Users:   #{User.count}"
-puts "  Posts:    #{Post.where(parent_id: nil).count} top-level + #{Post.where.not(parent_id: nil).count} replies"
+puts "  Posts:   #{Post.where(parent_id: nil).count} top-level + #{Post.where.not(parent_id: nil).count} replies"
 puts "  Likes:   #{Like.count}"
 puts "  Reposts: #{Repost.count}"
 puts "  Tags:    #{Tag.count}"
 puts
-puts "Sign in as any user1..user#{USER_COUNT}@loadtest.example.com — password #{PASSWORD.inspect}."
+
+mega = plan.accounts.each_with_index.select { |a, _| a.shape == :mega }.first
+if mega
+  mega_user_id = user_ids_by_account[mega[1]].first
+  mega_user = User.find(mega_user_id)
+  puts "Mega-account for profile stress: /@#{mega_user.username} (#{mega[0].post_count} posts)"
+end
+puts "Sign in as any user@loadtest.example.com — password #{PASSWORD.inspect}."
