@@ -18,21 +18,37 @@
 # reads the local database directly, so the app being measured has to be the one
 # this checkout is configured against, however the load reaches it.
 #
-# Running the load from k6 Cloud instead of this machine:
+# Sending results to Grafana Cloud k6. There are two of these and the difference
+# matters more than the names suggest:
+#
+#   K6_MODE=stream   generate the load here, upload the results
+#   K6_MODE=cloud    generate the load in the cloud, reaching this app over the
+#                    public internet
+#
+# Stream is almost always the one you want. The load still comes from this
+# machine against localhost, so the numbers stay comparable with every local run
+# recorded in docs/stress-testing.md, and the dashboard is the only thing that
+# changes. No tunnel is involved:
+#
+#   k6 cloud login --token <token>
+#   K6_MODE=stream script/stress-test
+#
+# Cloud execution is a different measurement, not a nicer version of the same
+# one. The app has to be reachable from the internet, which for a development
+# server means a tunnel:
 #
 #   k6 cloud login --token <token>
 #   ngrok http 3000                                  # or any tunnel
 #   DEV_ALLOWED_HOSTS=<subdomain>.ngrok-free.dev bin/rails server
 #   K6_MODE=cloud script/stress-test https://<subdomain>.ngrok-free.dev
 #
-# Be careful what that measures. Load generated in a cloud region, crossing the
-# public internet and a free tunnel to reach a laptop, spends most of its
-# latency budget on the journey — the tunnel is in the measurement, and on a
-# free tier it rate-limits too. It is the right tool for checking the scenarios
-# run somewhere other than here; it is the wrong tool for a number you intend to
-# compare against the local runs. Numbers meant to describe a deployment come
-# from I-1g in the infrastructure repository, where load and app sit in the same
-# cluster.
+# Load generated in a cloud region, crossing the public internet and a free
+# tunnel to reach a laptop, spends most of its latency budget on the journey —
+# the tunnel is in the measurement, and on a free tier it rate-limits too. It is
+# the right tool for checking the scenarios run from somewhere else; it is the
+# wrong tool for a number you intend to compare against the local runs. Numbers
+# meant to describe a deployment come from I-1g in the infrastructure
+# repository, where load and app sit in the same cluster.
 
 set -euo pipefail
 
@@ -76,15 +92,28 @@ fi
 
 K6_MODE="${K6_MODE:-local}"
 
-if [ "$K6_MODE" = "cloud" ]; then
-  echo "=== Running scenarios on k6 Cloud (about two minutes) ==="
-  echo "    Load originates in the cloud and reaches $BASE_URL over the public"
-  echo "    internet, so the transport is part of every number below."
-  K6_COMMAND=(k6 cloud run)
-else
-  echo "=== Running scenarios (about two minutes) ==="
-  K6_COMMAND=(k6 run)
-fi
+case "$K6_MODE" in
+  cloud)
+    echo "=== Running scenarios on k6 Cloud (about two minutes) ==="
+    echo "    Load originates in the cloud and reaches $BASE_URL over the public"
+    echo "    internet, so the transport is part of every number below."
+    K6_COMMAND=(k6 cloud run)
+    ;;
+  stream)
+    echo "=== Running scenarios here, streaming results to k6 Cloud (about two minutes) ==="
+    echo "    Load is generated on this machine, so these numbers stay comparable"
+    echo "    with the local runs in docs/stress-testing.md."
+    K6_COMMAND=(k6 cloud run --local-execution)
+    ;;
+  local)
+    echo "=== Running scenarios (about two minutes) ==="
+    K6_COMMAND=(k6 run)
+    ;;
+  *)
+    echo "K6_MODE must be local, stream or cloud — got '$K6_MODE'." >&2
+    exit 1
+    ;;
+esac
 
 "${K6_COMMAND[@]}" \
   --env "BASE_URL=$BASE_URL" \
@@ -92,4 +121,5 @@ fi
   --env "LIKE_POST_ID=$LIKE_POST_ID" \
   --env "LOAD_EMAIL=$LOAD_EMAIL" \
   --env "LOAD_PASSWORD=${LOAD_PASSWORD:-loadtest1}" \
+  --env "RUN_LABEL=${RUN_LABEL:-}" \
   "$SCRIPT_DIR/stress/scenarios.js"
