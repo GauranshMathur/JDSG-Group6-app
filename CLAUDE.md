@@ -87,9 +87,11 @@ Rules:
   the switch is meant to stay a single environment variable.
 - Sidekiq with Redis for background jobs — decided but **not installed**. Do not add either
   until a milestone actually needs a job.
-- OpenTelemetry for telemetry and k6 for load generation — decided for milestone 8
-  ([ADR 0009](docs/adr/0009-opentelemetry.md), [ADR 0008](docs/adr/0008-k6-load-generation.md)),
-  **not yet installed**.
+- OpenTelemetry for telemetry — **installed** in milestone 8 slice B
+  ([ADR 0009](docs/adr/0009-opentelemetry.md)). The exporter is configuration:
+  `OTEL_TRACES_EXPORTER=console` or `otlp`, unset means nothing is emitted.
+- k6 for load generation — decided for milestone 8 slice C
+  ([ADR 0008](docs/adr/0008-k6-load-generation.md)), **not yet installed**.
 - RSpec + FactoryBot for tests. Not Minitest.
 - RuboCop with `rubocop-rails-omakase`.
 - Propshaft + importmap. No Node build step, no bundler/webpack.
