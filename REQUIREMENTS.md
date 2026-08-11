@@ -133,8 +133,8 @@ production-ready, and so the work is visible if it ever is deployed.
 | --- | --- | --- |
 | F-8.1 | The load-test seed generates shaped data at configurable scale — mixed account sizes from lurker to mega-account, skewed engagement — on any supported database | **Met** — `lib/load_test/plan.rb`, specced in `spec/lib/load_test/plan_spec.rb`; usage and timings in [`docs/stress-testing.md`](docs/stress-testing.md) |
 | F-8.2 | The app is instrumented with OpenTelemetry: request duration, DB time and query counts from auto-instrumentation, plus feed rebuild duration, item count and cache hit/miss from custom spans — exporter chosen by configuration ([ADR 0009](docs/adr/0009-opentelemetry.md)) | **Met** — `config/initializers/opentelemetry.rb` and spans in `RankedFeed`, asserted in `spec/services/ranked_feed_telemetry_spec.rb` |
-| F-8.3 | Repeatable k6 scenarios exercise the feed cold, warm and under engagement churn — plus mega-account profiles and search — at the 10k and 100k seed scales ([ADR 0008](docs/adr/0008-k6-load-generation.md)) | Planned |
-| F-8.4 | Findings are written down with numbers, and every improvement that follows traces to a measured problem | Planned |
+| F-8.3 | Repeatable k6 scenarios exercise the feed cold, warm and under engagement churn — plus mega-account profiles and search — at the 10k and 100k seed scales ([ADR 0008](docs/adr/0008-k6-load-generation.md)) | **Partial** — `script/stress-test` and `script/stress/scenarios.js` run all four scenarios; measured at 10k, not yet at 100k |
+| F-8.4 | Findings are written down with numbers, and every improvement that follows traces to a measured problem | **Met** — [`docs/stress-testing.md`](docs/stress-testing.md) records seed timings, the telemetry baseline and the k6 results, with their caveats |
 
 ---
 
