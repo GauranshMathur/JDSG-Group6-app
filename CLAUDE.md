@@ -222,11 +222,14 @@ merged. Milestone 8 delivered the first measurements: shaped seed data
 ([ADR 0008](docs/adr/0008-k6-load-generation.md)) runnable locally or streamed to
 Grafana Cloud k6, and findings with numbers in
 [`docs/stress-testing.md`](docs/stress-testing.md). It measured and fixed nothing by
-design. What remains is planned in `docs/roadmap.md`: the 100k-post scale (F-8.3 is
-Partial — measured at 10k only) and the improvement PRs the numbers argue for, each
-citing the number it moves — first the ranked feed's per-request deserialization, p95
-2.31 s against a 2,000 ms budget. New app *features* remain a scope expansion to raise
-with the user, not a default.
+design. What follows is **milestone 8.5 — load-testing harness v2**, planned in
+`docs/roadmap.md` (F-8.5.x): open-model k6 profiles — smoke, load, breakpoint, spike —
+with a 90-9-1 journey mix and error-rate gates, a production-shape target (the container
+image), and Grafana Cloud as the reading surface for k6 results and Tempo traces alike.
+Then the measurements (10k re-baseline, the outstanding 100k closing F-8.3) and only
+then the feed improvement, measured with the better instruments — the number to beat is
+feed p95 2.31 s against a 2,000 ms budget. New app *features* remain a scope expansion
+to raise with the user, not a default.
 
 **Infrastructure lives in its own repository.** [JDSG-Group6-infra](https://github.com/GauranshMathur/JDSG-Group6-infra) holds the AWS
 reference design, the Terraform, the Kubernetes manifests and the decisions behind them. This
