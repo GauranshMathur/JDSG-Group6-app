@@ -20,7 +20,8 @@ on a single branch.
 | 6 | **Search** — find posts and people from the sidebar | **Done** |
 | 6.5 | **Feed caching** — cache the ranked feed, warm on boot, invalidate on engagement | **Done** |
 | 7 | **Images** — profile avatars and image uploads on posts | **Done** |
-| 8 | **Stress and telemetry** — shaped seed data at scale, basic telemetry, stress the ranked feed, write down what breaks | **Planned** |
+| 8 | **Stress and telemetry** — shaped seed data at scale, basic telemetry, stress the ranked feed, write down what breaks | **Done** — measured at 10k; the 100k run moved to 8.5 |
+| 8.5 | **Load-testing harness v2** — open-model k6 profiles, production-shape target, Grafana Cloud reading surface; then the measurements and the feed fix | **Planned** |
 
 ### Infrastructure
 
