@@ -536,8 +536,68 @@ unlimited pagination, measured on the same data:
 The cached list still holds **all 43,058 entries in ranked order** — deep pagination is
 unchanged, because what shrinks is the width of each entry, not the length of the list.
 
-**Its remaining limit, stated rather than discovered later.** The prototype still
-deserializes the whole id list on every request, so its cost still grows with the
+### Shipped, and measured against the same machine
+
+The change landed as described (N-6.8). Both runs below are the sandbox
+container, the same 10,000-post seed, the same profiles — the "before" taken by
+reverting the two files and re-running, so nothing but the implementation
+differs.
+
+Direct calls, no HTTP:
+
+| | before | after | |
+| --- | --- | --- | --- |
+| page 1 | 763.0 ms | **15.8 ms** | 48× |
+| page 6 | 709.9 ms | **15.7 ms** | 45× |
+| page 51 | 716.4 ms | **15.8 ms** | 45× |
+| rebuild on a cache miss | 2,858.8 ms | **642.9 ms** | 4.4× |
+| cached payload | 4.75 MB | **375 KB** | 13× |
+
+**Breakpoint** — the ramp that previously aborted itself:
+
+| | before | after |
+| --- | --- | --- |
+| outcome | aborted at 62 s | **ran the full 5 minutes to 600 req/min** |
+| p95 | 29.37 s | **142 ms** |
+| average | 14.24 s | **74.6 ms** |
+| requests completed | 42 | **1,649** |
+| dropped iterations | 14 | **0** |
+
+**Load** — the 90-9-1 mix at 54 reader journeys a minute:
+
+| | before | after |
+| --- | --- | --- |
+| requests failed | **47.3%** (195 of 412) | **0%** (0 of 1,334) |
+| content checks passed | 51.2% | **100%** |
+| average | 49.97 s | **468 ms** |
+| median | 58.66 s | **106 ms** |
+| p95 | 60 s (the timeout) | 2.53 s |
+| throughput | 1.25 req/s | **4.41 req/s** |
+| a whole reader journey | 2 m 56 s | **2.06 s** |
+
+The sandbox is markedly slower than the laptop the earlier baseline came from,
+which is why its "before" lost half its requests where the laptop's lost none
+under the same profile. The comparison that matters is each column against the
+other, on one machine.
+
+The ranking is unchanged: recomputing the old ordering and comparing gives an
+identical first 1,000 entries. Beyond that the two disagree, because 33,326 of
+the 43,058 entries share a score with at least one other and `sort_by` is not
+stable — two rebuilds of the *old* implementation disagreed with each other for
+the same reason. Pre-existing, unchanged here, and worth a deterministic
+tie-break if deep pagination across a rebuild ever needs to be reproducible.
+
+**What is left, now that this no longer hides it.** The load profile still
+crosses its 2-second p95 on the sandbox, with a median of 106 ms and a maximum
+of 8 s — a fast page with an expensive tail. The tail is the rebuild: writes
+bust the cache every few seconds, a rebuild is 643 ms, and readers arriving
+during one all miss and each recompute the whole ordering. That is a cache
+stampede, and it is the same question milestone 8 asked and could not answer,
+because the churn writer never wrote. Single-flight rebuilds, or serving the
+stale ordering while one rebuild runs, is the next measurable improvement.
+
+**The remaining limit of the approach, stated rather than discovered later.** It
+still deserializes the whole id list on every request, so its cost still grows with the
 database — just with a constant 13× smaller. At 100,000 posts the list would be roughly
 3.7 MB and the read would climb back into the tens of milliseconds. Caching per-page
 slices, or moving the ranking into SQL, is what removes the growth rather than shrinking
