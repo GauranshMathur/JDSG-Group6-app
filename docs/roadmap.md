@@ -508,12 +508,19 @@ sits **under 3 requests/second**. Under sustained load it queues rather than fai
 but under a 480/minute burst it stopped answering altogether, losing **31.7% of
 requests** to sixty-second timeouts before recovering on its own once the burst passed.
 
-Outstanding: the 100k seed run (closing F-8.3), and the same profiles against the
-production-shape target. Then the feed improvement — rank over plucked counter columns
-instead of instantiating 43k records, cache the ordered post IDs rather than the object
-graph, hydrate only the visible page — re-measured with the same harness. The number to
-beat is now a capacity one: **3.5 requests/second and a p95 of 13.75 s** at the load
-profile's default rates.
+**The feed improvement has shipped** (N-6.8): the ranked *order* is cached as
+identifiers and a request loads only the page it displays. Measured before and after on
+one machine, at the same seed, with the same profiles — a page 763 ms → 15.8 ms, the
+breakpoint ramp from aborting at 62 seconds to completing the full ramp to 600
+requests/minute at p95 142 ms, and the load profile from losing 47% of its requests to
+losing none while throughput went 1.25 → 4.41 requests/second.
+
+Outstanding: the 100k seed run (closing F-8.3), and the profiles against the
+production-shape target. And one new target the fix exposed by no longer hiding it —
+the remaining latency tail is a **cache stampede**: writes bust the ordering every few
+seconds, a rebuild is 643 ms, and every reader arriving during one recomputes it. That
+is the question milestone 8 asked and could not answer, because its churn writer never
+wrote.
 
 ### Explicitly not in this block
 
