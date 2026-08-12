@@ -1,0 +1,12 @@
+<% content_for :title, "Not found" %>
+
+<div class="not-found">
+  <h1 class="not-found__heading">This isn't here</h1>
+
+  <p class="not-found__body">
+    Whatever you were looking for has gone. A post can be deleted by the
+    person who wrote it, and a link can simply be wrong.
+  </p>
+
+  <%= link_to "Back to the feed", root_path, class: "not-found__link" %>
+</div>

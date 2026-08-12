@@ -587,14 +587,55 @@ stable — two rebuilds of the *old* implementation disagreed with each other fo
 the same reason. Pre-existing, unchanged here, and worth a deterministic
 tie-break if deep pagination across a rebuild ever needs to be reproducible.
 
-**What is left, now that this no longer hides it.** The load profile still
-crosses its 2-second p95 on the sandbox, with a median of 106 ms and a maximum
-of 8 s — a fast page with an expensive tail. The tail is the rebuild: writes
-bust the cache every few seconds, a rebuild is 643 ms, and readers arriving
-during one all miss and each recompute the whole ordering. That is a cache
-stampede, and it is the same question milestone 8 asked and could not answer,
-because the churn writer never wrote. Single-flight rebuilds, or serving the
-stale ordering while one rebuild runs, is the next measurable improvement.
+### The stampede, and what removing it was worth
+
+Milestone 8.6 (F-8.6.1). Invalidation used to delete the ordering, so from the
+moment anyone liked a post until the next rebuild finished, every reader found
+nothing cached and started an identical 643 ms rebuild. Three workers doing one
+job, with everyone else queued behind them.
+
+It now marks the ordering stale instead. One request claims the rebuild;
+everyone else is served the previous ordering, at most one rebuild out of date.
+Same machine, same seed, same load profile:
+
+| | before | after |
+| --- | --- | --- |
+| reader p95 | 2.52 s | **980 ms** |
+| engager p95 | 2.37 s | **1.16 s** |
+| creator p95 | 2.98 s | **1.56 s** |
+| slowest request | 8.00 s | **1.84 s** |
+| average | 468 ms | **278 ms** |
+| a whole reader journey | 2.06 s | **1.22 s** |
+| latency thresholds | 3 of 3 crossed | **all passed** |
+| requests failed | 0% | 0% |
+
+**This is the first run in which the load profile passes every threshold it
+declares.** The median barely moved — 106 ms to 115 ms, two extra cache reads
+per request — because the median request was never the problem. What went is
+the tail: the slowest request is a quarter of what it was, and the p90/p95
+figures that were dominated by readers queueing behind duplicated rebuilds now
+reflect the app's actual speed.
+
+**What it costs.** A reader can see an ordering one rebuild — a few hundred
+milliseconds — out of date. Against a ranking that divides engagement by age
+and therefore drifts continuously, and a cache that already answers with a
+value up to `CACHE_TTL` old whenever nothing is being written, that is not a
+new category of staleness; it is a slightly wider bound on one the design
+always had. What the app refuses to make stale is a person's own action: a new
+post is prepended to its author's timeline by the create response, not by the
+ranking.
+
+The rebuild lock expires by itself after 30 seconds, so a process that dies
+mid-rebuild leaves the feed stale for seconds rather than permanently.
+
+**What this exposed, and where it went.** With a cache hit down to 16 ms, the
+load profile still crossed its 2-second p95 — median 106 ms, maximum 8 s, a
+fast page with an expensive tail. The tail was the rebuild: writes bust the
+ordering every few seconds, a rebuild is 643 ms, and every reader arriving
+during one recomputed it. That is a cache stampede, and it was invisible while
+a hit and a miss differed by 4× rather than 40×. It is also the question
+milestone 8 asked about invalidation and could not answer, because its churn
+writer never wrote. Addressed in milestone 8.6, measured above.
 
 **The remaining limit of the approach, stated rather than discovered later.** It
 still deserializes the whole id list on every request, so its cost still grows with the

@@ -57,11 +57,26 @@ RSpec.describe "Not found", type: :request do
     include_examples "the application's not-found page"
   end
 
+  # `Accept: */*` is what curl, link checkers and most bots send, and Rails
+  # resolves it to `Mime::ALL` rather than HTML — so `request.format.html?` is
+  # false for it. Checking that instead of negotiating served these clients a
+  # 404 with an empty body, which the specs above did not catch because
+  # integration tests ask for HTML by name.
+  describe "a client that will take anything" do
+    it "still gets the page" do
+      get tag_path("nothinghere"), headers: { "Accept" => "*/*" }
+
+      expect(response).to have_http_status(:not_found)
+      expect(response.body).to include("Back to the feed")
+    end
+  end
+
   describe "a request that is not for a page" do
     it "answers 404 without a body for a non-HTML format" do
       get tag_path("nothinghere"), headers: { "Accept" => "application/json" }
 
       expect(response).to have_http_status(:not_found)
+      expect(response.body).to be_empty
     end
   end
 end

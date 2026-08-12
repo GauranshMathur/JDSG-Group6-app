@@ -21,7 +21,8 @@ on a single branch.
 | 6.5 | **Feed caching** — cache the ranked feed, warm on boot, invalidate on engagement | **Done** |
 | 7 | **Images** — profile avatars and image uploads on posts | **Done** |
 | 8 | **Stress and telemetry** — shaped seed data at scale, basic telemetry, stress the ranked feed, write down what breaks | **Done** — measured at 10k; the 100k run moved to 8.5 |
-| 8.5 | **Load-testing harness v2** — open-model k6 profiles, production-shape target, Grafana Cloud reading surface; then the measurements and the feed fix | **Planned** |
+| 8.5 | **Load-testing harness v2** — open-model k6 profiles, production-shape target, Grafana Cloud reading surface; then the measurements and the feed fix | **Built** — 100k scale and production-target runs outstanding |
+| 8.6 | **Absence handled deliberately** — one rebuild at a time, and the application's own not-found page | **Built** |
 
 ### Infrastructure
 
@@ -521,6 +522,50 @@ the remaining latency tail is a **cache stampede**: writes bust the ordering eve
 seconds, a rebuild is 643 ms, and every reader arriving during one recomputes it. That
 is the question milestone 8 asked and could not answer, because its churn writer never
 wrote.
+
+### Milestone 8.6 — Absence handled deliberately (F-8.6.x) — **built**
+
+Two things the app does when something it expected is not there. They arrived
+together because they are the same question at two levels: the ranking is
+missing while it is being rebuilt, and a post is missing because someone
+deleted it. Both were previously answered by doing the most expensive or the
+least helpful thing available.
+
+#### One rebuild at a time (F-8.6.1)
+
+Invalidation deleted the ordering, so from the moment anyone liked a post until
+the next rebuild finished, every reader found nothing cached and started an
+identical 643 ms rebuild. It now marks the ordering stale: one request claims
+the rebuild, everyone else is served the previous ordering.
+
+Measured on one machine, same seed, same profile — reader p95 **2.52 s → 980
+ms**, slowest request **8.00 s → 1.84 s**, and the load profile passing every
+threshold it declares for the first time. Numbers and the staleness trade in
+[`docs/stress-testing.md`](stress-testing.md).
+
+This is the invalidation question milestone 8 asked and answered wrongly,
+because its churn writer never wrote. The answer is that invalidation *was*
+expensive — not because rebuilds are frequent, but because each one was
+performed several times over.
+
+#### The application's own not-found page (F-8.6.2)
+
+A deleted post, an unknown username, an unknown tag and someone else's post all
+answered 404 with `public/404.html` — unstyled, unbranded, no way back. Posts
+are deleted for real, so following a link to one that has gone is ordinary
+rather than exceptional. `ApplicationController` now rescues
+`ActiveRecord::RecordNotFound` and renders an in-app page.
+
+Deliberately the same page for "deleted" and "not yours": authorisation here is
+scoping (F-3.5), so someone probing for other people's post ids should not be
+able to tell the two apart.
+
+**Not done here.** `Post has_many :replies, dependent: :destroy`, so deleting a
+post still destroys every reply under it, including other people's. A tombstone
+that keeps the thread — Reddit's `[deleted]` — needs soft deletion and a
+decision in every place a post can surface: the ranking, profiles, search, tag
+pages, reply threads, counter caches. That is a product decision rather than a
+performance one; it is in [`docs/open-questions.md`](open-questions.md).
 
 ### Explicitly not in this block
 

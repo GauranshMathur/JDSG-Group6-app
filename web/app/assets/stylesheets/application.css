@@ -1041,3 +1041,36 @@ body {
 .profile__avatar {
   margin-bottom: 0.75rem;
 }
+
+/* The not-found page (F-8.6.2). Same column as the feed, so a dead link lands
+   somewhere that still looks like the application. */
+.not-found {
+  max-width: 38rem;
+  margin: 0 auto;
+  padding: 4rem 1rem;
+  text-align: center;
+}
+
+.not-found__heading {
+  font-size: 1.5rem;
+  margin: 0 0 0.75rem;
+}
+
+.not-found__body {
+  color: var(--colour-muted);
+  margin: 0 0 2rem;
+}
+
+.not-found__link {
+  display: inline-block;
+  padding: 0.6rem 1.25rem;
+  border-radius: 999px;
+  background: var(--colour-accent);
+  color: #fff;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.not-found__link:hover {
+  filter: brightness(1.05);
+}
