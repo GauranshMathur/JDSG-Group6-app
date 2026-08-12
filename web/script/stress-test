@@ -104,11 +104,17 @@ fi
 echo "=== Discovering seeded fixtures ==="
 
 # One runner call rather than several: booting Rails is the expensive part.
+# Discovery must read the database of the app being measured. For the dev
+# server that is this checkout's; for the production container
+# (script/stress-server) override with:
+#   RAILS_RUNNER="docker exec twitter-clone-stress bin/rails runner"
+RAILS_RUNNER="${RAILS_RUNNER:-bin/rails runner}"
+
 # Sign-in accounts come from the load-test seed only — a development database
 # can also hold db:seed sample users and manually registered accounts with
 # other passwords, and discovering one of those makes every journey that
 # writes fail its sign-in.
-FIXTURES="$(bin/rails runner '
+FIXTURES="$($RAILS_RUNNER '
   mega = User.joins(:posts).group("users.id").order(Arel.sql("COUNT(posts.id) DESC")).first
   post_ids = Post.top_level.order(likes_count: :desc).limit(20).pluck(:id)
   emails = User.where("email_address LIKE ?", "%@loadtest.example.com").order(:id).limit(20).pluck(:email_address)
