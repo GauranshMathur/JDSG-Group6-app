@@ -202,6 +202,12 @@ Slice C (F-8.3), run with `script/stress-test` against the 10,000-post seed. Fou
 scenarios, staggered rather than concurrent, because the churn scenario deliberately busts
 the cache and the warm scenario must not have that happening to it.
 
+**Superseded by the harness v2 baseline below.** These numbers were measured with fixed
+VUs — a closed model, whose arrival rate falls as the app slows down. The same app and
+seed measured five times slower under an open model. They are kept because the
+comparisons between scenarios still hold and because the record of what was measured,
+and with what, is the point of this document.
+
 **Read the caveat first.** These come from a development-mode server with
 `RAILS_MAX_THREADS=3` and a single Puma process, on the development machine. Development
 mode carries code reloading and no eager loading, and three threads is not a production
@@ -348,6 +354,135 @@ cloud ceiling, raise it — `READERS_MAX_VUS`, `BREAKPOINT_MAX_VUS`, `SPIKE_MAX_
 ```bash
 BREAKPOINT_MAX_VUS=300 BREAKPOINT_MAX_RPM=2000 script/stress-test breakpoint
 ```
+
+## Harness v2 baseline: the 10,000-post seed, open model
+
+Milestone 8.5 slice G. Machine B (the Apple Silicon laptop), development server, the
+same 10k seed the milestone 8 numbers came from, streamed to Grafana Cloud k6. **These
+supersede the slice C numbers above**, which were measured under a closed model and are
+optimistic by roughly a factor of five.
+
+**There are two regimes, and the boundary is the finding.** Up to and past its knee the
+app queues without failing — 0% `http_req_failed` and every content check passing in
+both the load and breakpoint profiles, including the moment the ramp aborted. Push a
+burst at it and that stops being true: the spike profile lost **31.7% of requests** to
+timeouts. Slow degrades into unavailable somewhere between 3 and 8 requests a second.
+
+### Load — the 90-9-1 mix at a steady arrival rate
+
+54 reader journeys/minute, 5 engager, 1 creator, for five minutes. 1,182 requests,
+1,084/1,084 checks passed, no errors.
+
+| Journey | p90 | p95 | Budget |
+| --- | --- | --- | --- |
+| reader | 13.18 s | **13.75 s** | 2,000 ms |
+| engager | 13.00 s | **13.56 s** | 2,000 ms |
+| creator | 12.69 s | **13.19 s** | 2,000 ms |
+
+Overall: avg **9.25 s**, median 9.76 s, max 15.47 s. Sustained throughput **3.58
+requests/second**. A whole reader journey — four page loads — took an average of
+**39.8 seconds**, p95 63 s, max 98 s. `dropped_iterations: 29`: k6 could not start
+iterations on schedule because every VU was still waiting on the previous one.
+
+**The closed model was hiding a factor of five.** The same app, seed and machine
+measured 1.71 s average under slice C's five fixed VUs. Under an open model at 0.9
+journeys/second it measures 9.25 s. Neither number is wrong; they answer different
+questions. Fixed VUs ask "how slow is it when I only ever have five requests in
+flight" — and because each VU waits for its response before sending again, the test
+politely stops applying load exactly when the app starts struggling. Real arrivals do
+not. **Every latency figure recorded in this document before this section understates
+the problem, for that reason.**
+
+### Breakpoint — where the feed stops coping
+
+Feed reads only, ramping from 60 requests/minute towards 600 in five stages. The run
+aborted itself 114 seconds in, on the p95 > 15 s gate, having reached the second stage.
+Abort evaluation does not begin until 60 s, and p95 had already passed 15 s by then, so
+**the knee is at or below 168 requests/minute — under 3 feed requests per second.**
+
+| | value |
+| --- | --- |
+| median | 2.30 s |
+| p90 | 13.62 s |
+| p95 | 15.62 s |
+| max | 17.55 s |
+| errors | 0 of 236 |
+| dropped iterations | 12 |
+
+Median 2.3 s against a p95 of 15.6 s is the signature of a queue rather than a slow
+page: some requests are served at the app's real speed while others sit behind them.
+Which is what the arithmetic predicts — a feed request holds a thread for ~1.6 s of
+CPU-bound deserialization, and there are three threads, so the feed can serve on the
+order of two requests a second before arrivals start stacking up.
+
+### Spike — where queueing becomes unavailability
+
+A viral burst: 60 requests/minute for a minute, then **480/minute held for 90 seconds**,
+then back to 60 for two minutes to watch the recovery. Eight requests a second against
+an app that tops out under three — a deliberate 2.7× overload.
+
+It did not cope.
+
+| | value |
+| --- | --- |
+| requests lost | **90 of 284 — 31.7%** |
+| p90 / p95 | **60 s / 60 s** (k6's request timeout — they never returned) |
+| median (of those that answered) | 20 s |
+| p95 (of those that answered) | 47.6 s |
+| dropped iterations | **706**, against 284 completed |
+| slowest journey | 2 m 11 s |
+
+The shape, read against the stage clock: the VU pool saturated at **t=85 s**, fifteen
+seconds into the burst. Timeouts began at **t=97 s** and ran until **t=145 s**. During
+that window the app was, from a visitor's point of view, down — not erroring, which
+would at least be quick, but silent: **no response at all inside sixty seconds**.
+
+Two things worth being precise about.
+
+**These are client-side timeouts, not server errors.** The app never returned a 5xx; it
+simply did not answer in time. That is worse than an error, not better — a request that
+errors releases its thread, while one of these is still occupying a thread while the
+visitor has already given up. And k6 dropped 706 iterations it could not even start,
+which means the real arrival rate the app failed to serve is more than double what
+appears in `http_reqs`.
+
+**It did recover.** The last timeout was at t=145 s, before load dropped back at
+t=160 s, and nothing failed across the two-minute recovery window. So the app is not
+left in a broken state by a burst — it comes back on its own once arrivals fall below
+what it can serve. Whether latency returned to its ~2 s baseline or stayed elevated is a
+question for the run's time series in Grafana; the aggregates here cannot answer it.
+
+One harness caveat: the VU pool is 90 (the free Grafana Cloud project's ceiling). At
+8 requests/second with responses taking a minute, no realistic pool would have kept up —
+480 VUs would be needed — so the pool limit shaped the *numbers* but not the conclusion.
+The app failing to answer within sixty seconds is the app's behaviour, not k6's.
+
+### What this changes
+
+The improvement target is unchanged but much better quantified, and the case for it is
+now a capacity argument rather than a latency one:
+
+- **Capacity is ~3.5 requests/second**, mixed, on a development server with three
+  threads. Not concurrent users — requests per second, in total.
+- **The feed alone tops out under 3 requests/second**, and past that, latency does not
+  degrade gracefully; it climbs to 13–15 s within one ramp stage.
+- **The failure mode is queueing until it is not.** Under sustained load the app
+  answers everything, slowly. Under a burst it stops answering: a third of requests
+  never returned. There is no error handling to fix here — both regimes have the same
+  single cause, a request holding a thread for over a second — but the burst behaviour
+  is what makes this worth fixing before anything is deployed rather than after.
+- **A burst does not leave it broken.** It recovers by itself once arrivals drop.
+
+Deserializing 20 post IDs and hydrating one page from the database should cost
+milliseconds where the present code costs 1.6 s, so the fix is expected to move the
+knee by an order of magnitude rather than a few percent. That is the claim the
+re-run has to check.
+
+**Caveats.** Development server, three threads, one process, one laptop, SQLite. The
+*ratios* and the failure shape are the finding; the absolute ceiling belongs to this
+setup. The production-shape target below removes the dev-mode overhead — and adds a
+file-store cache, which will make the feed worse, not better. Deployment numbers come
+from I-1g in the infrastructure repository.
 
 ## A production-shape target
 
