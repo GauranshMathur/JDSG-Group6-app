@@ -1,7 +1,18 @@
 require "rails_helper"
 
 # F-6.5.1, F-6.5.2, F-6.5.3
-RSpec.describe RankedFeed do
+#
+# These asserted a warm read cost *zero* queries, which it did: the cache held
+# every ranked item as a whole object, so a request needed nothing from the
+# database. That was the defect, not the achievement — it made a cache hit
+# 763 ms of rebuilding objects in memory at the 10,000-post seed, growing with
+# the database (N-6.8, docs/stress-testing.md). What is cached now is the
+# ranked order, and a page is a bounded lookup of the posts it displays.
+#
+# So the budget these hold is "computed once, and a page costs a page" rather
+# than zero. The invalidation examples below are unchanged and still the point
+# of the file.
+RSpec.describe RankedFeed, type: :service do
   around do |example|
     original_store = Rails.cache
     Rails.cache = ActiveSupport::Cache::MemoryStore.new
@@ -12,39 +23,29 @@ RSpec.describe RankedFeed do
 
   # F-6.5.1
   describe "caching" do
-    it "reads from cache on the second call instead of hitting the database" do
+    it "computes the ranking once and reuses it" do
       create(:post, body: "cached post")
 
       RankedFeed.new.items
+      ordering = Rails.cache.read(RankedFeed::CACHE_KEY)
 
-      query_count = 0
-      callback = ->(_name, _start, _finish, _id, payload) {
-        query_count += 1 unless payload[:name] == "SCHEMA" || payload[:name] == "CACHE"
-      }
-
-      ActiveSupport::Notifications.subscribed(callback, "sql.active_record") do
-        RankedFeed.new.items
-      end
-
-      expect(query_count).to eq(0)
+      # The posts on the page, and the accounts that reposted them. Never a
+      # scan of every post to rank them again.
+      expect(count_queries { RankedFeed.new.items }).to be <= 2
+      expect(Rails.cache.read(RankedFeed::CACHE_KEY)).to eq(ordering)
     end
 
-    it "paginates from the cached feed without extra queries" do
+    it "paginates from the cached ordering" do
       create_list(:post, RankedFeed::PAGE_SIZE + 5)
 
       RankedFeed.new.items
 
-      query_count = 0
-      callback = ->(_name, _start, _finish, _id, payload) {
-        query_count += 1 unless payload[:name] == "SCHEMA" || payload[:name] == "CACHE"
-      }
-
-      ActiveSupport::Notifications.subscribed(callback, "sql.active_record") do
+      queries = count_queries do
         page2 = RankedFeed.new(page: 1).items
         expect(page2.size).to eq(5)
       end
 
-      expect(query_count).to eq(0)
+      expect(queries).to be <= 2
     end
   end
 
@@ -112,23 +113,20 @@ RSpec.describe RankedFeed do
 
   # F-6.5.3
   describe "warm on boot" do
-    it "populates the cache via RankedFeed.warm" do
+    it "populates the ordering via RankedFeed.warm, so the first request does not rebuild" do
       create(:post, body: "warmed post")
 
       Rails.cache.clear
       RankedFeed.warm
 
-      query_count = 0
-      callback = ->(_name, _start, _finish, _id, payload) {
-        query_count += 1 unless payload[:name] == "SCHEMA" || payload[:name] == "CACHE"
-      }
+      expect(Rails.cache.read(RankedFeed::CACHE_KEY)).to be_present
 
-      ActiveSupport::Notifications.subscribed(callback, "sql.active_record") do
+      queries = count_queries do
         items = RankedFeed.new.items
         expect(items.map { |i| i.post.body }).to include("warmed post")
       end
 
-      expect(query_count).to eq(0)
+      expect(queries).to be <= 2
     end
   end
 end
