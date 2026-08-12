@@ -249,14 +249,38 @@ deserializing a 4.8 MB cached array — is CPU-bound and holds its thread for th
 so with three threads the sixth request queues behind two full deserializations before it
 starts. The feed does not degrade gracefully under concurrency; it queues.
 
-*Invalidation is not the problem.* The churn scenario was built expecting the write traffic
-to be the expensive part, on the reasoning that every like busts the cache and forces a
-rebuild. On both machines it measured **no worse than the warm scenario** — 7.01 s against
-7.10 s on A, 1.53 s against 1.71 s on B, churn marginally ahead each time and well inside
-the noise. Two independent runs agreeing is what makes this worth acting on: the rebuild
-frequency barely matters, because the dominant cost is paid on *every* request whether it
-hits or misses. That points any improvement work away from "bust the cache less often" and
-towards "stop deserializing the whole feed to serve twenty items".
+*Invalidation is not the problem* — **is corrected below; the churn scenario measured
+nothing.** As originally recorded: the churn scenario was built expecting the write
+traffic to be the expensive part, measured no worse than warm on both machines (7.01 s
+against 7.10 s on A, 1.53 s against 1.71 s on B), and was read as proof that rebuild
+frequency barely matters.
+
+**Correction (milestone 8.5 slice D).** The churn readers were real, but the writer that
+was supposed to be busting the cache never landed a single like, so churn ≈ warm was a
+warm cache compared with itself. Three defects compounded, found the first time a smoke
+profile asserted that writes actually land:
+
+1. The writer signed in during k6's `setup()` — whose cookie jar VUs never inherit — so
+   the writer VU held no session.
+2. A signed-out post page contains no authenticity token, so the token scrape found
+   nothing and the writer returned without POSTing. Nothing checked the writer, so four
+   green scenarios reported anyway.
+3. Had it POSTed: the scrape read the page's *first form* token, and Rails issues
+   per-form CSRF tokens scoped to one action — any other endpoint answers a silent 422.
+
+What survives the correction: the dominant per-request cost is proven independently by
+the telemetry — a cache **hit** costs 1.6 s of deserialization — so the improvement
+target stands unchanged. What does not: how much invalidation adds under real write
+traffic is an open question again, remeasured in slice G with the harness v2 load
+profile, whose engager journeys sign in per VU, use the session-scoped meta token, and
+assert every write landed. The `scenarios.js` writer is fixed the same way and now
+checks `writer: like landed`.
+
+The first run with the fixed writer suggests the answer will be different: at the 1k
+seed on the sandbox machine, churn measured **2.5× warm** (301 ms against 119 ms avg,
+p95 568 ms against 190 ms) the moment the writer's likes actually landed. Small seed,
+slow machine — not a recorded finding, but reason to expect the 10k remeasurement to
+overturn the original conclusion rather than confirm it.
 
 Profile and search stay fast under the same concurrency, which is what makes the
 comparison worth having: both scope and paginate in SQL, and neither holds a thread doing
@@ -265,4 +289,50 @@ Ruby work proportional to the size of the database.
 **Not fixed here.** Milestone 8 measures. The improvements these numbers argue for — a
 per-page cache rather than one whole-feed key, or scoring in SQL — land afterwards as
 their own pull requests, each citing the number above that it moves.
+
+## Harness v2: the profile suite
+
+Milestone 8.5 slice D (F-8.5.1–3). The slice C suite above measures latency under a
+closed model — fixed VUs that wait for responses, so the slower the app gets, the less
+load the test sends, and the percentiles flatter it. The profile suite replaces it for
+everything after milestone 8; the sections above stay as the record of what was measured
+and with what.
+
+```bash
+script/stress-test smoke        # every journey once, strict gates — ~1 min
+script/stress-test load         # 90-9-1 mix at a steady arrival rate — 5 min
+script/stress-test breakpoint   # ramp the feed until the SLOs break — ~5 min
+script/stress-test spike        # viral burst, then watch the recovery — ~4 min
+script/stress-test              # the legacy slice C scenarios, unchanged budgets
+```
+
+Journeys, not endpoints. A reader loads the feed, pages it (`?page=1` — never exercised
+by the old suite), opens a post, and checks a profile or searches; an engager does that
+signed in, likes and replies; a creator signs in and posts. The mix is D-1's 90-9-1,
+expressed as per-minute arrival rates. The load profile uses `constant-arrival-rate` —
+an open model: iterations arrive on schedule whether or not the app has kept up, and
+when k6 runs out of VUs it reports `dropped_iterations`, which is a capacity finding
+rather than a harness artifact.
+
+Every profile gates on error rate (`http_req_failed`) as well as latency, and every
+check asserts page content — a run that serves errors, or serves the wrong page
+quickly, cannot end green. Run `smoke` before any long profile: it is the gate that
+would have caught the churn writer in one minute.
+
+Three things the suite knows about the app, so runs do not trip over them:
+
+- **Write profiles write.** Engagers reply, creators post. Reseed when a rerun must be
+  strictly comparable.
+- **Sign-in is rate-limited** — 10 per 3 minutes per IP, the app's own protection.
+  Each profile keeps its signer count inside the limit (signed-in scenarios hold
+  `maxVUs == preAllocatedVUs`); leave ~3 minutes between signing profiles or the second
+  run's writers sit the run out.
+- **Sessions persist across a VU's iterations** (`noCookiesReset: true`), because k6
+  otherwise wipes each VU's cookies between iterations — the defect class that silently
+  disarmed the old churn writer.
+
+Rates and durations are environment variables with laptop-sized defaults — the knobs
+(`READERS_PER_MIN`, `LOAD_DURATION`, `BREAKPOINT_MAX_RPM`, `SPIKE_RPM`, …) are listed at
+the top of each profile in `script/stress/`. Every profile streams to Grafana Cloud with
+`K6_MODE=stream`, arriving named `twitter-clone <profile> — <RUN_LABEL>`.
 

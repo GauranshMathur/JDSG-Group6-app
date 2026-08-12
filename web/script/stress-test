@@ -1,37 +1,53 @@
 #!/usr/bin/env bash
-# Milestone 8 slice C (F-8.3) — run the k6 stress scenarios against a locally
-# running app.
+# Drive the k6 suite against a locally running app.
+#
+# Milestone 8 slice C built the original scenarios (F-8.3); milestone 8.5
+# slice D added the profile suite (F-8.5.1–3).
 #
 # Usage:
-#   cd web
-#   bin/rails runner script/seed-load-test 10000   # if not already seeded
-#   bin/rails server                               # in another terminal
-#   script/stress-test                             # here
+#   script/stress-test [profile] [base_url]
 #
-#   script/stress-test http://localhost:3000       # explicit base URL
+#   script/stress-test                    # legacy milestone-8 scenarios
+#   script/stress-test smoke              # is every journey walkable (~1 min)
+#   script/stress-test load               # 90-9-1 mix at a steady arrival rate
+#   script/stress-test breakpoint         # climb until the feed breaks
+#   script/stress-test spike              # viral burst, then watch recovery
+#   script/stress-test load http://localhost:3000
+#   script/stress-test http://localhost:3000    # legacy scenarios, explicit URL
 #
 # Needs k6 on PATH (ADR 0008): https://grafana.com/docs/k6/latest/set-up/install-k6/
 #
-# The scenarios need to know which account is the mega-account and which post to
-# like, and those are properties of the seeded data rather than constants, so
-# they are discovered here and passed to k6 as environment variables. Discovery
-# reads the local database directly, so the app being measured has to be the one
-# this checkout is configured against, however the load reaches it.
+# The journeys need seeded fixtures — the mega-account, posts to open and
+# like, accounts to sign in with — and those are properties of the data rather
+# than constants, so they are discovered here and passed to k6 as environment
+# variables. Discovery reads the local database directly, so the app being
+# measured has to be the one this checkout is configured against, however the
+# load reaches it.
 #
-# Sending results to Grafana Cloud k6. There are two of these and the difference
-# matters more than the names suggest:
+# The smoke and load profiles WRITE to the database: engagers reply, creators
+# post. That is what makes them honest, and it means a load database is not a
+# pristine one — reseed (`bin/rails db:reset && bin/rails runner
+# script/seed-load-test <n>`) when a rerun must be strictly comparable.
+#
+# They also SIGN IN, and the app rate-limits sign-in to 10 per 3 minutes per
+# IP — its own protection, working as designed. Each profile stays inside the
+# limit on its own; leave ~3 minutes between signing profiles (smoke, load,
+# scenarios) or the second run's sign-ins are refused and its write journeys
+# sit the run out.
+#
+# Sending results to Grafana Cloud k6. Two modes, and the difference matters:
 #
 #   K6_MODE=stream   generate the load here, upload the results
 #   K6_MODE=cloud    generate the load in the cloud, reaching this app over the
 #                    public internet
 #
 # Stream is almost always the one you want. The load still comes from this
-# machine against localhost, so the numbers stay comparable with every local run
-# recorded in docs/stress-testing.md, and the dashboard is the only thing that
-# changes. No tunnel is involved:
+# machine against localhost, so the numbers stay comparable with every local
+# run recorded in docs/stress-testing.md, and the dashboard is the only thing
+# that changes. No tunnel is involved:
 #
 #   k6 cloud login --token <token>
-#   K6_MODE=stream script/stress-test
+#   K6_MODE=stream script/stress-test load
 #
 # Cloud execution is a different measurement, not a nicer version of the same
 # one. The app has to be reachable from the internet, which for a development
@@ -40,20 +56,40 @@
 #   k6 cloud login --token <token>
 #   ngrok http 3000                                  # or any tunnel
 #   DEV_ALLOWED_HOSTS=<subdomain>.ngrok-free.dev bin/rails server
-#   K6_MODE=cloud script/stress-test https://<subdomain>.ngrok-free.dev
+#   K6_MODE=cloud script/stress-test load https://<subdomain>.ngrok-free.dev
 #
 # Load generated in a cloud region, crossing the public internet and a free
 # tunnel to reach a laptop, spends most of its latency budget on the journey —
-# the tunnel is in the measurement, and on a free tier it rate-limits too. It is
-# the right tool for checking the scenarios run from somewhere else; it is the
-# wrong tool for a number you intend to compare against the local runs. Numbers
-# meant to describe a deployment come from I-1g in the infrastructure
+# the tunnel is in the measurement, and on a free tier it rate-limits too. It
+# is the right tool for checking the scenarios run from somewhere else; it is
+# the wrong tool for a number you intend to compare against the local runs.
+# Numbers meant to describe a deployment come from I-1g in the infrastructure
 # repository, where load and app sit in the same cluster.
 
 set -euo pipefail
 
-BASE_URL="${1:-http://localhost:3000}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# First argument may be a profile name or (for the legacy invocation) a URL.
+PROFILE="scenarios"
+BASE_URL="http://localhost:3000"
+
+if [ $# -ge 1 ]; then
+  case "$1" in
+    http://*|https://*) BASE_URL="$1" ;;
+    *)                  PROFILE="$1"; BASE_URL="${2:-http://localhost:3000}" ;;
+  esac
+fi
+
+case "$PROFILE" in
+  scenarios|smoke|load|breakpoint|spike) ;;
+  *)
+    echo "Unknown profile '$PROFILE' — use scenarios, smoke, load, breakpoint or spike." >&2
+    exit 1
+    ;;
+esac
+
+SCRIPT_FILE="$SCRIPT_DIR/stress/$PROFILE.js"
 
 if ! command -v k6 >/dev/null 2>&1; then
   echo "k6 is not on PATH. See https://grafana.com/docs/k6/latest/set-up/install-k6/" >&2
@@ -67,21 +103,28 @@ fi
 
 echo "=== Discovering seeded fixtures ==="
 
-# One runner call rather than three: booting Rails is the expensive part.
+# One runner call rather than several: booting Rails is the expensive part.
+# Sign-in accounts come from the load-test seed only — a development database
+# can also hold db:seed sample users and manually registered accounts with
+# other passwords, and discovering one of those makes every journey that
+# writes fail its sign-in.
 FIXTURES="$(bin/rails runner '
   mega = User.joins(:posts).group("users.id").order(Arel.sql("COUNT(posts.id) DESC")).first
-  post = Post.top_level.order(likes_count: :desc).first
-  loader = User.order(:id).first
-  puts [ mega&.username, post&.id, loader&.email_address ].join("|")
+  post_ids = Post.top_level.order(likes_count: :desc).limit(20).pluck(:id)
+  emails = User.where("email_address LIKE ?", "%@loadtest.example.com").order(:id).limit(20).pluck(:email_address)
+  puts [ mega&.username, post_ids.join(","), emails.join(",") ].join("|")
 ' 2>/dev/null | tail -1)"
 
 MEGA_USER="$(echo "$FIXTURES" | cut -d"|" -f1)"
-LIKE_POST_ID="$(echo "$FIXTURES" | cut -d"|" -f2)"
-LOAD_EMAIL="$(echo "$FIXTURES" | cut -d"|" -f3)"
+POST_IDS="$(echo "$FIXTURES" | cut -d"|" -f2)"
+EMAILS="$(echo "$FIXTURES" | cut -d"|" -f3)"
+LIKE_POST_ID="$(echo "$POST_IDS" | cut -d"," -f1)"
+LOAD_EMAIL="$(echo "$EMAILS" | cut -d"," -f1)"
 
+echo "  Profile:      $PROFILE"
 echo "  Mega-account: @${MEGA_USER:-<none>}"
-echo "  Post to like: ${LIKE_POST_ID:-<none>}"
-echo "  Writer signs in as: ${LOAD_EMAIL:-<none>}"
+echo "  Posts:        $(echo "$POST_IDS" | awk -F, '{print NF}') candidates, first ${LIKE_POST_ID:-<none>}"
+echo "  Accounts:     $(echo "$EMAILS" | awk -F, '{print NF}') sign-in candidates"
 echo
 
 if [ -z "$MEGA_USER" ]; then
@@ -94,19 +137,19 @@ K6_MODE="${K6_MODE:-local}"
 
 case "$K6_MODE" in
   cloud)
-    echo "=== Running scenarios on k6 Cloud (about two minutes) ==="
+    echo "=== Running $PROFILE on k6 Cloud ==="
     echo "    Load originates in the cloud and reaches $BASE_URL over the public"
     echo "    internet, so the transport is part of every number below."
     K6_COMMAND=(k6 cloud run)
     ;;
   stream)
-    echo "=== Running scenarios here, streaming results to k6 Cloud (about two minutes) ==="
+    echo "=== Running $PROFILE here, streaming results to k6 Cloud ==="
     echo "    Load is generated on this machine, so these numbers stay comparable"
     echo "    with the local runs in docs/stress-testing.md."
     K6_COMMAND=(k6 cloud run --local-execution)
     ;;
   local)
-    echo "=== Running scenarios (about two minutes) ==="
+    echo "=== Running $PROFILE ==="
     K6_COMMAND=(k6 run)
     ;;
   *)
@@ -118,8 +161,23 @@ esac
 "${K6_COMMAND[@]}" \
   --env "BASE_URL=$BASE_URL" \
   --env "MEGA_USER=$MEGA_USER" \
+  --env "POST_IDS=$POST_IDS" \
+  --env "EMAILS=$EMAILS" \
   --env "LIKE_POST_ID=$LIKE_POST_ID" \
   --env "LOAD_EMAIL=$LOAD_EMAIL" \
   --env "LOAD_PASSWORD=${LOAD_PASSWORD:-loadtest1}" \
+  --env "SEARCH_TERMS=${SEARCH_TERMS:-}" \
   --env "RUN_LABEL=${RUN_LABEL:-}" \
-  "$SCRIPT_DIR/stress/scenarios.js"
+  --env "READERS_PER_MIN=${READERS_PER_MIN:-}" \
+  --env "ENGAGERS_PER_MIN=${ENGAGERS_PER_MIN:-}" \
+  --env "CREATORS_PER_MIN=${CREATORS_PER_MIN:-}" \
+  --env "LOAD_DURATION=${LOAD_DURATION:-}" \
+  --env "BREAKPOINT_START_RPM=${BREAKPOINT_START_RPM:-}" \
+  --env "BREAKPOINT_MAX_RPM=${BREAKPOINT_MAX_RPM:-}" \
+  --env "BREAKPOINT_STAGE_SECONDS=${BREAKPOINT_STAGE_SECONDS:-}" \
+  --env "SPIKE_BASELINE_RPM=${SPIKE_BASELINE_RPM:-}" \
+  --env "SPIKE_RPM=${SPIKE_RPM:-}" \
+  --env "SPIKE_BASELINE_BEFORE=${SPIKE_BASELINE_BEFORE:-}" \
+  --env "SPIKE_HOLD=${SPIKE_HOLD:-}" \
+  --env "SPIKE_RECOVERY=${SPIKE_RECOVERY:-}" \
+  "$SCRIPT_FILE"

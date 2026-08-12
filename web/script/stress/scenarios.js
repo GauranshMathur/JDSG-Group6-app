@@ -54,6 +54,10 @@ export const options = {
     name: `twitter-clone feed stress${__ENV.RUN_LABEL ? ` — ${__ENV.RUN_LABEL}` : ""}`,
   },
 
+  // The writer's session must survive its iterations: k6 wipes each VU's
+  // cookie jar between iterations by default, and the app rate-limits sign-in.
+  noCookiesReset: true,
+
   // Thresholds are recorded, not enforced: this milestone measures and does not
   // fix, so a slow feed is the finding rather than a failure. They exist so the
   // summary marks which numbers are out of line.
@@ -103,25 +107,42 @@ export const options = {
 };
 
 // Rails protects non-GET requests with an authenticity token, so a writer has
-// to behave like a browser: fetch a form, read the token out of it, post with
-// it. The token is per-session and stays valid for the session, so it is read
-// once per VU rather than per request.
+// to behave like a browser. The token comes from the layout's
+// <meta name="csrf-token"> — the session-scoped token valid for any form.
+// Form inputs are not interchangeable: Rails issues per-form tokens scoped to
+// one action+method, so scraping a form's token and posting it elsewhere is a
+// silent 422. The first version of this file did exactly that, and worse,
+// signed in during setup() — whose cookie jar VUs never see — so the churn
+// writer held no session, found no token on the signed-out page, and returned
+// without ever liking anything. The churn scenario measured an untouched warm
+// cache. Recorded in docs/stress-testing.md; the writer now signs in in its
+// own VU and proves each like landed.
 function csrfToken(body) {
-  const match = body.match(/name="authenticity_token"[^>]*value="([^"]+)"/);
-  return match ? match[1] : "";
+  const meta = body && body.match(/<meta name="csrf-token" content="([^"]+)"/);
+  if (meta) return meta[1];
+  const input = body && body.match(/name="authenticity_token"[^>]*value="([^"]+)"/);
+  return input ? input[1] : "";
 }
 
-function signIn() {
+// Module state and cookies are both per-VU, so this is "has this VU signed in".
+let signedIn = false;
+
+function ensureSignedIn() {
+  if (signedIn) return true;
+  if (!EMAIL) return false;
+
   const form = http.get(`${BASE}/session/new`, PARAMS);
   const token = csrfToken(form.body);
-
   const res = http.post(`${BASE}/session`, {
     authenticity_token: token,
     email_address: EMAIL,
     password: PASSWORD,
   }, PARAMS);
 
-  return { signedIn: res.status === 200 || res.status === 302 };
+  // A failed sign-in also lands on a 200 page (the form, via redirect), so
+  // only the signed-in shell's sign-out control proves a session exists.
+  signedIn = ok(res, "Sign out");
+  return signedIn;
 }
 
 export function readFeed() {
@@ -142,13 +163,14 @@ export function readFeedUnderChurn() {
 // exists to keep RankedFeed.bust_cache firing, which is what a real timeline
 // does continuously and what turns a cache hit into a rebuild.
 export function likeAndUnlike() {
-  if (!EMAIL || !LIKE_POST_ID) return;
+  if (!LIKE_POST_ID || !ensureSignedIn()) return;
 
-  const form = http.get(`${BASE}/posts/${LIKE_POST_ID}`, PARAMS);
-  const token = csrfToken(form.body);
+  const page = http.get(`${BASE}/posts/${LIKE_POST_ID}`, PARAMS);
+  const token = csrfToken(page.body);
   if (!token) return;
 
-  http.post(`${BASE}/posts/${LIKE_POST_ID}/like`, { authenticity_token: token }, PARAMS);
+  const like = http.post(`${BASE}/posts/${LIKE_POST_ID}/like`, { authenticity_token: token }, PARAMS);
+  check(like, { "writer: like landed": (r) => r.status === 200 });
   sleep(1);
   http.post(`${BASE}/posts/${LIKE_POST_ID}/like`, {
     authenticity_token: token,
@@ -173,7 +195,3 @@ export function readSearch() {
   sleep(0.5);
 }
 
-export function setup() {
-  if (EMAIL) signIn();
-  return {};
-}
