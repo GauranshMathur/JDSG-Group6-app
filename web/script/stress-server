@@ -74,6 +74,10 @@ case "$COMMAND" in
 
     echo "=== Starting $NAME on port $PORT ==="
     docker rm -f "$NAME" >/dev/null 2>&1 || true
+    # OTEL_* pass through so the production target can send traces to the same
+    # place a dev server would — Grafana Cloud Tempo or a local collector. An
+    # endpoint of localhost needs rewriting: inside the container, localhost is
+    # the container.
     docker run -d --name "$NAME" -p "$PORT:80" \
       -v "$VOLUME:/rails/storage" \
       -e RAILS_ENV=production \
@@ -81,6 +85,9 @@ case "$COMMAND" in
       -e RAILS_LOG_TO_STDOUT=1 \
       -e RAILS_MAX_THREADS="${RAILS_MAX_THREADS:-3}" \
       ${WEB_CONCURRENCY:+-e WEB_CONCURRENCY="$WEB_CONCURRENCY"} \
+      ${OTEL_TRACES_EXPORTER:+-e OTEL_TRACES_EXPORTER="$OTEL_TRACES_EXPORTER"} \
+      ${OTEL_EXPORTER_OTLP_ENDPOINT:+-e OTEL_EXPORTER_OTLP_ENDPOINT="$OTEL_EXPORTER_OTLP_ENDPOINT"} \
+      ${OTEL_EXPORTER_OTLP_HEADERS:+-e OTEL_EXPORTER_OTLP_HEADERS="$OTEL_EXPORTER_OTLP_HEADERS"} \
       "$IMAGE" >/dev/null
 
     for attempt in $(seq 1 30); do
