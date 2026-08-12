@@ -504,7 +504,9 @@ The 10k baseline is measured and recorded in
 [`docs/stress-testing.md`](stress-testing.md), and it is worse than the closed-model
 suite ever showed: at 54 reader journeys a minute the app serves every request
 successfully at **p95 13.75 s**, sustains **3.58 requests/second**, and the feed's knee
-sits **under 3 requests/second**. Nothing errors at any rate — it queues.
+sits **under 3 requests/second**. Under sustained load it queues rather than failing —
+but under a 480/minute burst it stopped answering altogether, losing **31.7% of
+requests** to sixty-second timeouts before recovering on its own once the burst passed.
 
 Outstanding: the 100k seed run (closing F-8.3), and the same profiles against the
 production-shape target. Then the feed improvement — rank over plucked counter columns

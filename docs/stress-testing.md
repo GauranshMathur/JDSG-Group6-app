@@ -362,9 +362,11 @@ same 10k seed the milestone 8 numbers came from, streamed to Grafana Cloud k6. *
 supersede the slice C numbers above**, which were measured under a closed model and are
 optimistic by roughly a factor of five.
 
-**Nothing failed anywhere.** 0% `http_req_failed` and 100% of content checks passing in
-every profile, at every rate, including the point where the breakpoint ramp aborted. The
-app does not error under load; it queues.
+**There are two regimes, and the boundary is the finding.** Up to and past its knee the
+app queues without failing — 0% `http_req_failed` and every content check passing in
+both the load and breakpoint profiles, including the moment the ramp aborted. Push a
+burst at it and that stops being true: the spike profile lost **31.7% of requests** to
+timeouts. Slow degrades into unavailable somewhere between 3 and 8 requests a second.
 
 ### Load — the 90-9-1 mix at a steady arrival rate
 
@@ -413,6 +415,48 @@ Which is what the arithmetic predicts — a feed request holds a thread for ~1.6
 CPU-bound deserialization, and there are three threads, so the feed can serve on the
 order of two requests a second before arrivals start stacking up.
 
+### Spike — where queueing becomes unavailability
+
+A viral burst: 60 requests/minute for a minute, then **480/minute held for 90 seconds**,
+then back to 60 for two minutes to watch the recovery. Eight requests a second against
+an app that tops out under three — a deliberate 2.7× overload.
+
+It did not cope.
+
+| | value |
+| --- | --- |
+| requests lost | **90 of 284 — 31.7%** |
+| p90 / p95 | **60 s / 60 s** (k6's request timeout — they never returned) |
+| median (of those that answered) | 20 s |
+| p95 (of those that answered) | 47.6 s |
+| dropped iterations | **706**, against 284 completed |
+| slowest journey | 2 m 11 s |
+
+The shape, read against the stage clock: the VU pool saturated at **t=85 s**, fifteen
+seconds into the burst. Timeouts began at **t=97 s** and ran until **t=145 s**. During
+that window the app was, from a visitor's point of view, down — not erroring, which
+would at least be quick, but silent: **no response at all inside sixty seconds**.
+
+Two things worth being precise about.
+
+**These are client-side timeouts, not server errors.** The app never returned a 5xx; it
+simply did not answer in time. That is worse than an error, not better — a request that
+errors releases its thread, while one of these is still occupying a thread while the
+visitor has already given up. And k6 dropped 706 iterations it could not even start,
+which means the real arrival rate the app failed to serve is more than double what
+appears in `http_reqs`.
+
+**It did recover.** The last timeout was at t=145 s, before load dropped back at
+t=160 s, and nothing failed across the two-minute recovery window. So the app is not
+left in a broken state by a burst — it comes back on its own once arrivals fall below
+what it can serve. Whether latency returned to its ~2 s baseline or stayed elevated is a
+question for the run's time series in Grafana; the aggregates here cannot answer it.
+
+One harness caveat: the VU pool is 90 (the free Grafana Cloud project's ceiling). At
+8 requests/second with responses taking a minute, no realistic pool would have kept up —
+480 VUs would be needed — so the pool limit shaped the *numbers* but not the conclusion.
+The app failing to answer within sixty seconds is the app's behaviour, not k6's.
+
 ### What this changes
 
 The improvement target is unchanged but much better quantified, and the case for it is
@@ -422,8 +466,12 @@ now a capacity argument rather than a latency one:
   threads. Not concurrent users — requests per second, in total.
 - **The feed alone tops out under 3 requests/second**, and past that, latency does not
   degrade gracefully; it climbs to 13–15 s within one ramp stage.
-- **The failure mode is queueing, not errors.** Nothing to fix in error handling; the
-  fix is to stop each request holding a thread for over a second.
+- **The failure mode is queueing until it is not.** Under sustained load the app
+  answers everything, slowly. Under a burst it stops answering: a third of requests
+  never returned. There is no error handling to fix here — both regimes have the same
+  single cause, a request holding a thread for over a second — but the burst behaviour
+  is what makes this worth fixing before anything is deployed rather than after.
+- **A burst does not leave it broken.** It recovers by itself once arrivals drop.
 
 Deserializing 20 post IDs and hydrating one page from the database should cost
 milliseconds where the present code costs 1.6 s, so the fix is expected to move the
