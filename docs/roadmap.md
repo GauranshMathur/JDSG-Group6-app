@@ -408,9 +408,11 @@ outstanding** (F-8.3 is Partial — that seed run takes about an hour). Findings
   p95 crosses the 2-second budget even on the faster machine (2.31 s).
 - Concurrency queues rather than degrades: the deserialization is CPU-bound and holds
   its Puma thread for the duration, so readers stack behind each other.
-- Invalidation is **not** the problem — the churn scenario measured no worse than the
-  warm one on both machines. The cost is paid on every request, hit or miss, which
-  points the fix away from "bust the cache less often" and at the per-request volume.
+- ~~Invalidation is not the problem~~ — **corrected in milestone 8.5 slice D**: the
+  churn writer never landed a single write (three compounding harness defects, recorded
+  in [`docs/stress-testing.md`](stress-testing.md)), so churn ≈ warm compared a warm
+  cache with itself. The per-request deserialization cost stands on the telemetry's
+  direct evidence; what invalidation really adds is remeasured in slice G.
 - Profile and search stay one to two orders of magnitude faster under identical
   concurrency; both scope and paginate in SQL.
 
@@ -451,11 +453,15 @@ server traces in one place.
 - **Dev-mode target.** Code reloading, no eager loading, three threads. Fine for
   comparing runs against each other; wrong for capacity claims.
 
-#### Slice D — the profile suite (F-8.5.1–3)
+#### Slice D — the profile suite (F-8.5.1–3) — shipped
 
-Restructure `web/script/stress/` into a shared library (sign-in and CSRF, journeys,
+`web/script/stress/` restructured into a shared journey library (sign-in and CSRF,
 checks) and four profiles, each runnable alone via `script/stress-test <profile>` and
-streamable to Grafana Cloud:
+streamable to Grafana Cloud. Building the smoke profile immediately paid for the whole
+slice: its write-assertions exposed that the milestone 8 churn writer had never landed a
+single like, which invalidated the "invalidation is not the problem" finding — the
+correction is recorded above and in
+[`docs/stress-testing.md`](stress-testing.md).
 
 | Profile | Executor | Answers | Runtime |
 | --- | --- | --- | --- |
