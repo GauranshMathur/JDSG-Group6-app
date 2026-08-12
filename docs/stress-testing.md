@@ -484,6 +484,66 @@ setup. The production-shape target below removes the dev-mode overhead — and a
 file-store cache, which will make the feed worse, not better. Deployment numbers come
 from I-1g in the infrastructure repository.
 
+## Decomposing the warm read: where the time actually goes
+
+The load numbers say the feed is the bottleneck. This says why, by measuring the pieces
+directly rather than inferring them from latency. Taken in the sandbox container at the
+10,000-post seed (43,058 cached items, 4.75 MB), calling `RankedFeed` directly — no HTTP,
+no view rendering, no concurrency, so the figures are lower than a request's and the
+*ratios* are the point.
+
+**Every page of the feed costs the same, and it is not the page.**
+
+| | today |
+| --- | --- |
+| page 1 (first 20) | 763 ms |
+| page 6 | 710 ms |
+| page 51 | 716 ms |
+| — of which, unpacking the cached blob | 798 ms |
+
+Deserialization is the whole of it; `drop(page * 20).first(20)` on the resulting array
+measures 0.0 ms. The cached value is one object holding every ranked item, and Ruby
+cannot read part of it — the entire 4.75 MB is rebuilt into 43,058 objects before the
+twenty being displayed can be picked out. **Page 51 costs what page 1 costs**, so a
+reader scrolling pays the full price again on every scroll rather than amortising it.
+
+The same measurement at the 1,000-post seed makes the scaling explicit:
+
+| seed | cached items | warm read |
+| --- | --- | --- |
+| 1,000 posts | 4,083 | 71.9 ms |
+| 10,000 posts | 43,058 | 763 ms |
+
+10.5× the items, 10.6× the time. **The cost of serving twenty posts is proportional to
+the number of posts in the database.** That is the defect in one sentence, and it is why
+profile pages (`ProfileFeed`, 34.6 ms for a 669-post account) and search (0.7 ms) are
+unaffected: both scope and paginate in SQL, so their cost tracks what they display.
+
+### The fix, prototyped and measured
+
+Ranking over plucked counter columns, caching the ordered `[post_id, reposter_id]`
+pairs, and loading only the page being displayed — same ranking, same ordering, same
+unlimited pagination, measured on the same data:
+
+| | today | prototype | |
+| --- | --- | --- | --- |
+| cached value | 4.75 MB | **375 KB** | 13× smaller |
+| page 1 | 763 ms | **10.9 ms** | **70×** |
+| page 6 | 710 ms | **13.7 ms** | 52× |
+| page 51 | 716 ms | **10.1 ms** | 71× |
+| rebuild after any engagement write | 2,859 ms | **377 ms** | 8× |
+
+The cached list still holds **all 43,058 entries in ranked order** — deep pagination is
+unchanged, because what shrinks is the width of each entry, not the length of the list.
+
+**Its remaining limit, stated rather than discovered later.** The prototype still
+deserializes the whole id list on every request, so its cost still grows with the
+database — just with a constant 13× smaller. At 100,000 posts the list would be roughly
+3.7 MB and the read would climb back into the tens of milliseconds. Caching per-page
+slices, or moving the ranking into SQL, is what removes the growth rather than shrinking
+it; neither is needed at the scales this project measures, and both are more machinery.
+The 100k run (F-8.3) is what should decide whether that day has arrived.
+
 ## A production-shape target
 
 Milestone 8.5 slice E (F-8.5.4). Capacity numbers taken against the dev server measure
