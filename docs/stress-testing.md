@@ -370,3 +370,45 @@ Two things change under the production posture, and both matter when reading num
 Still one laptop: a breaking point found here describes the machine as much as the app.
 Deployment numbers come from I-1g in the infrastructure repository.
 
+## Traces to Grafana Cloud Tempo
+
+Milestone 8.5 slice F (F-8.5.5). The k6 results already stream to Grafana Cloud
+(`K6_MODE=stream`); this puts the server's side of the same story — request traces, and
+the `ranked_feed.read` / `ranked_feed.rebuild` spans — next to them. It is configuration
+only, which is the property ADR 0009 bought: nothing changes in the app.
+
+Grafana Cloud portal → your stack → **OpenTelemetry** → note the OTLP endpoint (it looks
+like `https://otlp-gateway-<region>.grafana.net/otlp`), your instance ID, and generate an
+API token. Then:
+
+```bash
+OTEL_TRACES_EXPORTER=otlp \
+OTEL_EXPORTER_OTLP_ENDPOINT="https://otlp-gateway-<region>.grafana.net/otlp" \
+OTEL_EXPORTER_OTLP_HEADERS="Authorization=Basic $(printf '%s' '<instance-id>:<token>' | base64 | tr -d '\n')" \
+bin/rails server
+```
+
+The exporter appends the per-signal path (`/v1/traces`) itself. The same three variables
+pass through `script/stress-server up`, so the production-shape target traces to the
+same place. Exported spans arrive under service `twitter-clone-web`.
+
+**Correlating a k6 run with its traces.** Both live in the same Grafana stack, so the
+run's time range is the join: open the run (named `twitter-clone <profile> — <label>`),
+note its window, then ask Tempo for the slow server work inside it — e.g.
+
+```
+{resource.service.name="twitter-clone-web" && name="ranked_feed.read" && duration > 1s}
+```
+
+— and the trace shows what that slow feed request actually spent its time on, with
+`cache_hit` and `item_count` attributes on the span.
+
+Two mechanics worth knowing:
+
+- The batch processor exports every few seconds from a running server. A short-lived
+  process (a runner, the seed) exits before the batch goes — call
+  `OpenTelemetry.tracer_provider.force_flush` at the end if its spans matter.
+- Verified locally against an OTLP sink: `OTEL_TRACES_EXPORTER=otlp` plus an endpoint
+  is all it takes for spans to POST to `/v1/traces`. The Grafana Cloud round-trip needs
+  the stack's credentials, so that last step is run by whoever holds them.
+

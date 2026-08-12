@@ -487,14 +487,16 @@ before deserializing — the dev-mode numbers understate the feed's cost. The de
 stays for quick iteration; every recorded run names its target, and deployment numbers
 remain I-1g's, in the infrastructure repository.
 
-#### Slice F — Grafana Cloud as the reading surface (F-8.5.5)
+#### Slice F — Grafana Cloud as the reading surface (F-8.5.5) — shipped
 
-k6 result streaming works since #56. The addition is Rails traces to the same Grafana
-Cloud stack's Tempo — pure configuration (`OTEL_TRACES_EXPORTER=otlp` plus the endpoint
-and credentials from the stack's OTLP page), documented and verified, with run labels
-and time ranges as the correlation between a k6 run and its traces. k6-to-Tempo trace
-propagation (k6's tracing module) is noted as an option but not built on while the
-module is experimental.
+k6 result streaming works since #56. Rails traces to the same stack's Tempo are
+documented in [`docs/stress-testing.md`](stress-testing.md) — pure configuration, with
+run labels and time ranges as the correlation, and a TraceQL query as the starting
+point. The OTLP path is verified end-to-end against a local sink; the final Grafana
+Cloud round-trip is one command run by whoever holds the stack's credentials.
+`script/stress-server` passes the `OTEL_*` variables into the container so the
+production-shape target traces to the same place. k6-to-Tempo trace propagation (k6's
+tracing module) remains an option not built on while the module is experimental.
 
 #### Slice G — the measurements, then the fix
 
