@@ -71,6 +71,9 @@ RSpec.configure do |config|
   config.include FactoryBot::Syntax::Methods
   config.include AuthenticationHelpers, type: :request
   config.include QueryCounter, type: :request
+  # The feed's query budget is a property of the service, not only of the
+  # request that renders it (N-6.8).
+  config.include QueryCounter, type: :service
   config.include ActiveSupport::Testing::TimeHelpers
 
   # Filter lines from Rails gems in backtraces.
