@@ -90,8 +90,10 @@ Rules:
 - OpenTelemetry for telemetry — **installed** in milestone 8 slice B
   ([ADR 0009](docs/adr/0009-opentelemetry.md)). The exporter is configuration:
   `OTEL_TRACES_EXPORTER=console` or `otlp`, unset means nothing is emitted.
-- k6 for load generation — decided for milestone 8 slice C
-  ([ADR 0008](docs/adr/0008-k6-load-generation.md)), **not yet installed**.
+- k6 for load generation — **in use** since milestone 8 slice C
+  ([ADR 0008](docs/adr/0008-k6-load-generation.md)). Scenarios live in
+  `web/script/stress/`, driven by `script/stress-test`; the k6 binary is a local
+  install, not bundled with the app.
 - RSpec + FactoryBot for tests. Not Minitest.
 - RuboCop with `rubocop-rails-omakase`.
 - Propshaft + importmap. No Node build step, no bundler/webpack.
@@ -212,14 +214,19 @@ docker build -t twitter-clone-web web   # Build the image
 
 ## Current milestone
 
-**The feature block is complete; milestone 8 — stress and telemetry — is planned.**
-Milestones 1–7 (including 5.5 and 6.5) are built, tested and merged. Milestone 8 is the
-first measurement milestone: shaped seed data at 10k and 100k posts, OpenTelemetry
-instrumentation ([ADR 0009](docs/adr/0009-opentelemetry.md)), k6 stress scenarios against
-the ranked feed ([ADR 0008](docs/adr/0008-k6-load-generation.md)), and findings written
-down with numbers. It measures and fixes nothing; improvements follow as separate PRs,
-each citing a number. The plan is in `docs/roadmap.md`, the requirements are F-8.x. New
-app *features* remain a scope expansion to raise with the user, not a default.
+**The feature block is complete; milestone 8 — stress and telemetry — is built and its
+findings are recorded.** Milestones 1–7 (including 5.5 and 6.5) are built, tested and
+merged. Milestone 8 delivered the first measurements: shaped seed data
+(`script/seed-load-test`), OpenTelemetry instrumentation
+([ADR 0009](docs/adr/0009-opentelemetry.md)), k6 stress scenarios
+([ADR 0008](docs/adr/0008-k6-load-generation.md)) runnable locally or streamed to
+Grafana Cloud k6, and findings with numbers in
+[`docs/stress-testing.md`](docs/stress-testing.md). It measured and fixed nothing by
+design. What remains is planned in `docs/roadmap.md`: the 100k-post scale (F-8.3 is
+Partial — measured at 10k only) and the improvement PRs the numbers argue for, each
+citing the number it moves — first the ranked feed's per-request deserialization, p95
+2.31 s against a 2,000 ms budget. New app *features* remain a scope expansion to raise
+with the user, not a default.
 
 **Infrastructure lives in its own repository.** [JDSG-Group6-infra](https://github.com/GauranshMathur/JDSG-Group6-infra) holds the AWS
 reference design, the Terraform, the Kubernetes manifests and the decisions behind them. This

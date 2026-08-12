@@ -348,57 +348,81 @@ Per-requirement status is in [`REQUIREMENTS.md`](../REQUIREMENTS.md) (F-7.x). Wh
   image, and the smoke test uploads an image and fetches its processed variant, so CI's
   container job fails on a missing image library instead of releasing it.
 
-### Milestone 8 — Stress and telemetry (F-8.x) — **planned**
+### Milestone 8 — Stress and telemetry (F-8.x) — **built; 100k scale outstanding**
 
-The first milestone after the feature block, and the first whose deliverable is
+The first milestone after the feature block, and the first whose deliverable was
 *measurement* rather than behaviour: make the app observable, load it with realistically
-shaped data, stress the ranked feed, and write down what actually happens. Improvements
-come afterwards, each traceable to a number this milestone produced.
+shaped data, stress the ranked feed, and write down what actually happens. All three
+slices are merged; the numbers and their caveats live in
+[`docs/stress-testing.md`](stress-testing.md).
 
-**Why now.** The ranked feed's cost model is currently known by reading code, not by
+**Why it existed.** The ranked feed's cost model was known by reading code, not by
 measurement. `RankedFeed#compute_feed` loads **every top-level post and every repost into
 memory** on each cache miss — with users, avatars and image blobs eager-loaded — scores
 and sorts them in Ruby, and caches the whole array under a single key for five minutes.
-Every like, repost, reply and new post busts that key. At the current seed scale (1,000
-posts) all of this is invisible. The questions a stress run answers: at what scale it
-stops being invisible, whether engagement churn under load turns the cache into a rebuild
-storm, what a page of feed costs cold versus warm, and how profile pages behave for
-accounts three orders of magnitude apart in size.
+Every like, repost, reply and new post busts that key. At a 1,000-post seed all of this
+was invisible. The stress run existed to find at what scale it stops being invisible,
+whether engagement churn turns the cache into a rebuild storm, what a page costs cold
+versus warm, and how profile pages behave for accounts three orders of magnitude apart
+in size — each is answered under "What the measurement found" below.
 
-#### Slice A — Seed profiles (F-8.1)
+#### Slice A — Seed profiles (F-8.1) — shipped
 
-`script/seed-load-test` currently creates a flat 1,000 users × 1,000 posts. Extend it to
-generate *shaped* data at configurable scale:
+`script/seed-load-test` generates *shaped* data at configurable scale: account shapes
+mixed per run rather than uniform (lurkers with nothing through mega-accounts with
+thousands of posts), engagement skewed into a small viral head and a long barely-engaged
+tail, and scale as an argument so runs are comparable over time. The distribution lives
+in `lib/load_test/plan.rb` and is specced in `spec/lib/load_test/plan_spec.rb`; seed
+timings are recorded in [`docs/stress-testing.md`](stress-testing.md).
 
-- Account shapes mixed per run, not uniform: lurkers with nothing, typical accounts with
-  tens of posts, heavy accounts with hundreds, a few mega-accounts with thousands.
-- Engagement skew: a small viral head and a long barely-engaged tail, rather than uniform
-  random likes.
-- Scale as an argument (1k / 10k / 100k posts) so runs are comparable over time. Stays
-  adapter-agnostic and idempotent, as today.
-
-#### Slice B — Telemetry via OpenTelemetry (F-8.2)
+#### Slice B — Telemetry via OpenTelemetry (F-8.2) — shipped
 
 Decided in [ADR 0009](adr/0009-opentelemetry.md): the app is instrumented with
 **OpenTelemetry** — Rails and Active Record auto-instrumentation for the request-level
 signals (duration, DB time, query counts), plus custom instrumentation in `RankedFeed`
 for the feed signals (a rebuild span carrying item count; cache hit or miss on every feed
 request). The exporter is configuration: console or a local OTLP endpoint during stress
-runs, the infrastructure track's collector once the app runs on the cluster. Instrumented
-once, exported anywhere — that is the reason it beat zero-dependency log lines, and the
-cost is recorded in the ADR.
+runs, the infrastructure track's collector once the app runs on the cluster — and unset
+means off, with no SDK loaded at all. Instrumented once, exported anywhere — that is the
+reason it beat zero-dependency log lines, and the cost is recorded in the ADR.
 
-#### Slice C — Stress scenarios and findings (F-8.3, F-8.4)
+#### Slice C — Stress scenarios and findings (F-8.3, F-8.4) — shipped at 10k
 
 Decided in [ADR 0008](adr/0008-k6-load-generation.md): **k6** drives the load, so
 app-side numbers and the infrastructure track's later cluster-side numbers (I-1g) are
-measured by the same tool and comparable without caveats. Scenarios are k6 scripts in
-`web/script/`, run against a locally booted app at the 10k and 100k seed scales: the feed
-cold and warm; the feed while engagement writes bust the cache mid-read; mega-account
-profile pages; search under volume. Findings land in `docs/stress-testing.md` as
-p50/p95/max per scenario per scale, and every improvement PR that follows cites the
-number it moves. **Milestone 8 measures; it fixes nothing** — improvements are separate
-follow-up PRs.
+measured by the same tool and comparable without caveats. Four staggered scenarios — the
+feed against a warm cache, the same reads while a writer busts the cache, mega-account
+profile pages, search under volume — live in `web/script/stress/` and are driven by
+`script/stress-test`: locally, streamed to Grafana Cloud k6, or executed from the cloud
+through a tunnel. Measured at the 10k seed on two machines; **the 100k scale is
+outstanding** (F-8.3 is Partial — that seed run takes about an hour). Findings are in
+[`docs/stress-testing.md`](stress-testing.md) as p50/p95/max per scenario.
+**Milestone 8 measured and fixed nothing** — improvements are separate follow-up PRs.
+
+**What the measurement found.** The detail and its caveats are in
+[`docs/stress-testing.md`](stress-testing.md); the short version:
+
+- A warm feed page is a ~2-second request, and ~77% of it is deserializing the whole
+  4.8 MB, 43,058-item cached array to serve 20 posts. At five concurrent readers the
+  p95 crosses the 2-second budget even on the faster machine (2.31 s).
+- Concurrency queues rather than degrades: the deserialization is CPU-bound and holds
+  its Puma thread for the duration, so readers stack behind each other.
+- Invalidation is **not** the problem — the churn scenario measured no worse than the
+  warm one on both machines. The cost is paid on every request, hit or miss, which
+  points the fix away from "bust the cache less often" and at the per-request volume.
+- Profile and search stay one to two orders of magnitude faster under identical
+  concurrency; both scope and paginate in SQL.
+
+**What follows, as separate PRs, each citing a number:**
+
+1. An overdrive ramp — the recorded scenarios stop at 5 VUs and never found the edge.
+   A ramp to ~30 VUs against the feed records the collapse point and the failure mode
+   before anything changes, so the improvement has a second before/after number.
+2. The feed improvement: rank over plucked counter columns instead of instantiating
+   43k records, cache the ordered post IDs rather than the object graph, and hydrate
+   only the visible page from the database. The number to beat is feed p95 **2.31 s**
+   against the 2,000 ms budget.
+3. The 100k-post measurement, completing F-8.3.
 
 **The boundary with the infrastructure repository.** This milestone is app logic under
 data volume, measured against a locally running app — it lives here because the seed
