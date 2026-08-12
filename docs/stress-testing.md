@@ -202,6 +202,12 @@ Slice C (F-8.3), run with `script/stress-test` against the 10,000-post seed. Fou
 scenarios, staggered rather than concurrent, because the churn scenario deliberately busts
 the cache and the warm scenario must not have that happening to it.
 
+**Superseded by the harness v2 baseline below.** These numbers were measured with fixed
+VUs — a closed model, whose arrival rate falls as the app slows down. The same app and
+seed measured five times slower under an open model. They are kept because the
+comparisons between scenarios still hold and because the record of what was measured,
+and with what, is the point of this document.
+
 **Read the caveat first.** These come from a development-mode server with
 `RAILS_MAX_THREADS=3` and a single Puma process, on the development machine. Development
 mode carries code reloading and no eager loading, and three threads is not a production
@@ -348,6 +354,87 @@ cloud ceiling, raise it — `READERS_MAX_VUS`, `BREAKPOINT_MAX_VUS`, `SPIKE_MAX_
 ```bash
 BREAKPOINT_MAX_VUS=300 BREAKPOINT_MAX_RPM=2000 script/stress-test breakpoint
 ```
+
+## Harness v2 baseline: the 10,000-post seed, open model
+
+Milestone 8.5 slice G. Machine B (the Apple Silicon laptop), development server, the
+same 10k seed the milestone 8 numbers came from, streamed to Grafana Cloud k6. **These
+supersede the slice C numbers above**, which were measured under a closed model and are
+optimistic by roughly a factor of five.
+
+**Nothing failed anywhere.** 0% `http_req_failed` and 100% of content checks passing in
+every profile, at every rate, including the point where the breakpoint ramp aborted. The
+app does not error under load; it queues.
+
+### Load — the 90-9-1 mix at a steady arrival rate
+
+54 reader journeys/minute, 5 engager, 1 creator, for five minutes. 1,182 requests,
+1,084/1,084 checks passed, no errors.
+
+| Journey | p90 | p95 | Budget |
+| --- | --- | --- | --- |
+| reader | 13.18 s | **13.75 s** | 2,000 ms |
+| engager | 13.00 s | **13.56 s** | 2,000 ms |
+| creator | 12.69 s | **13.19 s** | 2,000 ms |
+
+Overall: avg **9.25 s**, median 9.76 s, max 15.47 s. Sustained throughput **3.58
+requests/second**. A whole reader journey — four page loads — took an average of
+**39.8 seconds**, p95 63 s, max 98 s. `dropped_iterations: 29`: k6 could not start
+iterations on schedule because every VU was still waiting on the previous one.
+
+**The closed model was hiding a factor of five.** The same app, seed and machine
+measured 1.71 s average under slice C's five fixed VUs. Under an open model at 0.9
+journeys/second it measures 9.25 s. Neither number is wrong; they answer different
+questions. Fixed VUs ask "how slow is it when I only ever have five requests in
+flight" — and because each VU waits for its response before sending again, the test
+politely stops applying load exactly when the app starts struggling. Real arrivals do
+not. **Every latency figure recorded in this document before this section understates
+the problem, for that reason.**
+
+### Breakpoint — where the feed stops coping
+
+Feed reads only, ramping from 60 requests/minute towards 600 in five stages. The run
+aborted itself 114 seconds in, on the p95 > 15 s gate, having reached the second stage.
+Abort evaluation does not begin until 60 s, and p95 had already passed 15 s by then, so
+**the knee is at or below 168 requests/minute — under 3 feed requests per second.**
+
+| | value |
+| --- | --- |
+| median | 2.30 s |
+| p90 | 13.62 s |
+| p95 | 15.62 s |
+| max | 17.55 s |
+| errors | 0 of 236 |
+| dropped iterations | 12 |
+
+Median 2.3 s against a p95 of 15.6 s is the signature of a queue rather than a slow
+page: some requests are served at the app's real speed while others sit behind them.
+Which is what the arithmetic predicts — a feed request holds a thread for ~1.6 s of
+CPU-bound deserialization, and there are three threads, so the feed can serve on the
+order of two requests a second before arrivals start stacking up.
+
+### What this changes
+
+The improvement target is unchanged but much better quantified, and the case for it is
+now a capacity argument rather than a latency one:
+
+- **Capacity is ~3.5 requests/second**, mixed, on a development server with three
+  threads. Not concurrent users — requests per second, in total.
+- **The feed alone tops out under 3 requests/second**, and past that, latency does not
+  degrade gracefully; it climbs to 13–15 s within one ramp stage.
+- **The failure mode is queueing, not errors.** Nothing to fix in error handling; the
+  fix is to stop each request holding a thread for over a second.
+
+Deserializing 20 post IDs and hydrating one page from the database should cost
+milliseconds where the present code costs 1.6 s, so the fix is expected to move the
+knee by an order of magnitude rather than a few percent. That is the claim the
+re-run has to check.
+
+**Caveats.** Development server, three threads, one process, one laptop, SQLite. The
+*ratios* and the failure shape are the finding; the absolute ceiling belongs to this
+setup. The production-shape target below removes the dev-mode overhead — and adds a
+file-store cache, which will make the feed worse, not better. Deployment numbers come
+from I-1g in the infrastructure repository.
 
 ## A production-shape target
 

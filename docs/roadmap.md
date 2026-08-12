@@ -498,13 +498,20 @@ Cloud round-trip is one command run by whoever holds the stack's credentials.
 production-shape target traces to the same place. k6-to-Tempo trace propagation (k6's
 tracing module) remains an option not built on while the module is experimental.
 
-#### Slice G — the measurements, then the fix
+#### Slice G — the measurements, then the fix — baseline taken
 
-A full baseline with the new harness at the 10k seed, the outstanding 100k seed run
-(closing F-8.3), and then the feed improvement — rank over plucked counter columns
+The 10k baseline is measured and recorded in
+[`docs/stress-testing.md`](stress-testing.md), and it is worse than the closed-model
+suite ever showed: at 54 reader journeys a minute the app serves every request
+successfully at **p95 13.75 s**, sustains **3.58 requests/second**, and the feed's knee
+sits **under 3 requests/second**. Nothing errors at any rate — it queues.
+
+Outstanding: the 100k seed run (closing F-8.3), and the same profiles against the
+production-shape target. Then the feed improvement — rank over plucked counter columns
 instead of instantiating 43k records, cache the ordered post IDs rather than the object
 graph, hydrate only the visible page — re-measured with the same harness. The number to
-beat remains feed p95 **2.31 s** against the 2,000 ms budget.
+beat is now a capacity one: **3.5 requests/second and a p95 of 13.75 s** at the load
+profile's default rates.
 
 ### Explicitly not in this block
 
