@@ -20,7 +20,8 @@ on a single branch.
 | 6 | **Search** — find posts and people from the sidebar | **Done** |
 | 6.5 | **Feed caching** — cache the ranked feed, warm on boot, invalidate on engagement | **Done** |
 | 7 | **Images** — profile avatars and image uploads on posts | **Done** |
-| 8 | **Stress and telemetry** — shaped seed data at scale, basic telemetry, stress the ranked feed, write down what breaks | **Planned** |
+| 8 | **Stress and telemetry** — shaped seed data at scale, basic telemetry, stress the ranked feed, write down what breaks | **Done** — measured at 10k; the 100k run moved to 8.5 |
+| 8.5 | **Load-testing harness v2** — open-model k6 profiles, production-shape target, Grafana Cloud reading surface; then the measurements and the feed fix | **Planned** |
 
 ### Infrastructure
 
@@ -413,16 +414,10 @@ outstanding** (F-8.3 is Partial — that seed run takes about an hour). Findings
 - Profile and search stay one to two orders of magnitude faster under identical
   concurrency; both scope and paginate in SQL.
 
-**What follows, as separate PRs, each citing a number:**
-
-1. An overdrive ramp — the recorded scenarios stop at 5 VUs and never found the edge.
-   A ramp to ~30 VUs against the feed records the collapse point and the failure mode
-   before anything changes, so the improvement has a second before/after number.
-2. The feed improvement: rank over plucked counter columns instead of instantiating
-   43k records, cache the ordered post IDs rather than the object graph, and hydrate
-   only the visible page from the database. The number to beat is feed p95 **2.31 s**
-   against the 2,000 ms budget.
-3. The 100k-post measurement, completing F-8.3.
+**What follows** is planned as milestone 8.5 below. The overdrive ramp grew into a
+proper load-testing harness once the slice C suite's weaknesses were listed honestly;
+the 100k measurement and the feed improvement follow it, in that order, so the
+before/after comes from the better instruments.
 
 **The boundary with the infrastructure repository.** This milestone is app logic under
 data volume, measured against a locally running app — it lives here because the seed
@@ -430,6 +425,75 @@ shapes, the telemetry and the feed behaviour are application code. Sustained HTT
 latency injection and cluster behaviour belong to I-1g in
 [JDSG-Group6-infra](https://github.com/GauranshMathur/JDSG-Group6-infra), which consumes
 this milestone's seed profiles and telemetry when the app runs on the local cluster.
+
+### Milestone 8.5 — Load-testing harness v2 (F-8.5.x) — **planned**
+
+Milestone 8 proved the pipeline and found the feed's cost, but its harness has known
+weaknesses, and fixing the feed against a flawed harness would leave the before/after in
+doubt. This milestone rebuilds the harness first; the feed improvement lands after it,
+measured properly. Grafana Cloud is the reading surface throughout — k6 results and
+server traces in one place.
+
+**What is wrong with the slice C suite**, in the order it misleads:
+
+- **Closed model.** `constant-vus` with think-time couples arrival rate to response
+  time: the slower the app gets, the less load the test sends. Real arrivals do not
+  slow down because the server did — so the recorded p95s are optimistic. Open-model
+  executors (`constant-arrival-rate`, `ramping-arrival-rate`) fix this.
+- **Latency only.** Five fixed VUs answers "how slow at light load", never "how much
+  can it take", "where does it break" or "does it recover".
+- **Unrealistic mix.** Endpoints tested in isolation, sequentially. Real traffic is
+  D-1's 90-9-1 concurrently: readers dominating, engagers behind them, creators rare.
+- **Thin coverage.** Feed page 1 only — cursor pagination has never been load-tested;
+  no post detail page; one cache-friendly search term; the only write is like/unlike.
+- **No error-rate thresholds.** Content checks exist but `http_req_failed` is not
+  gated, so a run that serves errors can still end green.
+- **Dev-mode target.** Code reloading, no eager loading, three threads. Fine for
+  comparing runs against each other; wrong for capacity claims.
+
+#### Slice D — the profile suite (F-8.5.1–3)
+
+Restructure `web/script/stress/` into a shared library (sign-in and CSRF, journeys,
+checks) and four profiles, each runnable alone via `script/stress-test <profile>` and
+streamable to Grafana Cloud:
+
+| Profile | Executor | Answers | Runtime |
+| --- | --- | --- | --- |
+| `smoke` | 1–2 VUs, a few iterations | does every journey work at all | ~1 min |
+| `load` | constant-arrival-rate, 90-9-1 journey mix | behaviour at normal traffic | 5–10 min |
+| `breakpoint` | ramping-arrival-rate until SLOs breach | the knee, and the failure mode | ~5 min |
+| `spike` | baseline → ~8× for 90 s → back | survival and recovery of a viral burst | ~4 min |
+
+Journeys, not endpoints: a reader pages the feed on its cursor and opens a post; an
+engager also likes and replies; a creator signs in and posts. Every profile carries
+per-journey trends, content checks and error-rate thresholds. `scenarios.js` stays
+untouched so the recorded milestone 8 numbers keep their lineage; harness v2 numbers
+start a new table.
+
+#### Slice E — a production-shape target (F-8.5.4)
+
+Capacity numbers need eager loading, no reloader and a tuned Puma. The target is the
+existing `web/Dockerfile` image run locally against a seeded volume — the exact
+artifact the cluster will pull, so load-testing it also validates the image. The dev
+server stays for quick iteration; every recorded run names its target. Still a laptop:
+deployment numbers remain I-1g's, in the infrastructure repository.
+
+#### Slice F — Grafana Cloud as the reading surface (F-8.5.5)
+
+k6 result streaming works since #56. The addition is Rails traces to the same Grafana
+Cloud stack's Tempo — pure configuration (`OTEL_TRACES_EXPORTER=otlp` plus the endpoint
+and credentials from the stack's OTLP page), documented and verified, with run labels
+and time ranges as the correlation between a k6 run and its traces. k6-to-Tempo trace
+propagation (k6's tracing module) is noted as an option but not built on while the
+module is experimental.
+
+#### Slice G — the measurements, then the fix
+
+A full baseline with the new harness at the 10k seed, the outstanding 100k seed run
+(closing F-8.3), and then the feed improvement — rank over plucked counter columns
+instead of instantiating 43k records, cache the ordered post IDs rather than the object
+graph, hydrate only the visible page — re-measured with the same harness. The number to
+beat remains feed p95 **2.31 s** against the 2,000 ms budget.
 
 ### Explicitly not in this block
 

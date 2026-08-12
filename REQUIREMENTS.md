@@ -136,6 +136,16 @@ production-ready, and so the work is visible if it ever is deployed.
 | F-8.3 | Repeatable k6 scenarios exercise the feed cold, warm and under engagement churn — plus mega-account profiles and search — at the 10k and 100k seed scales ([ADR 0008](docs/adr/0008-k6-load-generation.md)) | **Partial** — `script/stress-test` and `script/stress/scenarios.js` run all four scenarios; measured at 10k, not yet at 100k |
 | F-8.4 | Findings are written down with numbers, and every improvement that follows traces to a measured problem | **Met** — [`docs/stress-testing.md`](docs/stress-testing.md) records seed timings, the telemetry baseline and the k6 results, with their caveats |
 
+### 1.8b Load-testing harness v2 (milestone 8.5)
+
+| ID | Requirement | Status |
+| --- | --- | --- |
+| F-8.5.1 | The stress suite is organised as independently runnable profiles — smoke, load, breakpoint, spike — each streamable to Grafana Cloud k6 | **Planned** |
+| F-8.5.2 | The load profile drives an open-model, mixed workload: request arrival independent of response time, journeys mixed 90-9-1 (readers, engagers, creators) across feed pages, post detail, profiles, search and writes | **Planned** |
+| F-8.5.3 | Every profile gates on error rate as well as latency, so a run that serves errors cannot end green | **Planned** |
+| F-8.5.4 | Capacity numbers (breakpoint, spike) are taken against a production-shape target — the container image with eager loading and tuned Puma — and every recorded run names its target | **Planned** |
+| F-8.5.5 | Rails traces export to Grafana Cloud Tempo by configuration alone, correlated with k6 runs by label and time range, documented in [`docs/stress-testing.md`](docs/stress-testing.md) | **Planned** |
+
 ---
 
 ## 1b. Design requirements
