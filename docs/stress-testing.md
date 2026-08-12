@@ -336,3 +336,37 @@ Rates and durations are environment variables with laptop-sized defaults — the
 the top of each profile in `script/stress/`. Every profile streams to Grafana Cloud with
 `K6_MODE=stream`, arriving named `twitter-clone <profile> — <RUN_LABEL>`.
 
+## A production-shape target
+
+Milestone 8.5 slice E (F-8.5.4). Capacity numbers taken against the dev server measure
+code reloading, missing eager loading and verbose logging as much as the app.
+`script/stress-server` runs the exact artifact the cluster will pull — the
+`web/Dockerfile` image — locally, with a seeded named volume:
+
+```bash
+script/stress-server up 10000        # build the image, seed the volume, serve on :3001
+RAILS_RUNNER="docker exec twitter-clone-stress bin/rails runner" \
+  script/stress-test load http://localhost:3001
+script/stress-server down            # stop; the volume and its data survive
+script/stress-server reset           # delete the volume too — the next up reseeds
+```
+
+`RAILS_RUNNER` matters: fixture discovery must read the database of the app being
+measured, and for the container that is the volume's, not the checkout's. Puma is tuned
+through the production knobs (`RAILS_MAX_THREADS`, `WEB_CONCURRENCY` — set the latter to
+the machine's core count for capacity runs). The dev server stays right for quick
+iteration; a recorded run names its target.
+
+Two things change under the production posture, and both matter when reading numbers:
+
+- **The cache is a file store.** Development uses `:memory_store`; production leaves
+  Rails' default `FileStore`, so every ranked-feed cache hit reads the multi-megabyte
+  payload from disk before deserializing it. Dev-mode numbers *understate* the feed's
+  cost — and a per-pod file store is what replicas would have had anyway, until the
+  shared cache the infrastructure work already calls for.
+- **Eager loading and quiet logs.** Boot does more, requests do less; per-request
+  numbers stop including the code reloader.
+
+Still one laptop: a breaking point found here describes the machine as much as the app.
+Deployment numbers come from I-1g in the infrastructure repository.
+

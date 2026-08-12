@@ -1,0 +1,117 @@
+#!/usr/bin/env bash
+# Milestone 8.5 slice E (F-8.5.4) — run the production image locally as the
+# load-test target.
+#
+# The dev server measures dev mode: code reloading, no eager loading, verbose
+# logging, three threads. Capacity numbers taken against it describe that
+# overhead as much as the app. This script runs the exact artifact the cluster
+# will pull — the web/Dockerfile image — with a seeded named volume, so the
+# target has eager loading, production logging and a tunable Puma while still
+# being one laptop. Deployment numbers still come from I-1g in the
+# infrastructure repository; this removes dev-mode noise, not the hardware.
+#
+# Usage:
+#   script/stress-server up [posts]   # build, seed if empty, start (default 10000 posts)
+#   script/stress-server down         # stop the container; the data volume survives
+#   script/stress-server reset        # down + delete the volume, so the next up reseeds
+#
+# Then point the suite at it — fixture discovery must read the container's
+# database, not the checkout's development one:
+#
+#   RAILS_RUNNER="docker exec twitter-clone-stress bin/rails runner" \
+#     script/stress-test smoke http://localhost:3001
+#
+# Knobs (all optional):
+#   PORT=3001             host port to publish on
+#   RAILS_MAX_THREADS=3   Puma threads per worker
+#   WEB_CONCURRENCY=      Puma workers — unset keeps the Rails default (single
+#                         worker); set to the machine's core count for capacity runs
+#   SEED=42               --seed passed to seed-load-test, so reruns are reproducible
+#
+# The SECRET_KEY_BASE is generated fresh per start, as CI does — no secret
+# leaves this machine, and the only cost is that sessions do not survive a
+# restart, which a load test does not need.
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+WEB_DIR="$(dirname "$SCRIPT_DIR")"
+
+IMAGE="twitter-clone-web:stress"
+NAME="twitter-clone-stress"
+VOLUME="twitter-clone-stress-data"
+PORT="${PORT:-3001}"
+
+COMMAND="${1:-up}"
+POSTS="${2:-10000}"
+
+run_in_image() {
+  docker run --rm -v "$VOLUME:/rails/storage" \
+    -e RAILS_ENV=production \
+    -e SECRET_KEY_BASE="$KEY" \
+    "$IMAGE" "$@"
+}
+
+case "$COMMAND" in
+  up)
+    KEY="$(openssl rand -hex 64)"
+
+    echo "=== Building $IMAGE ==="
+    docker build -t "$IMAGE" "$WEB_DIR"
+
+    docker volume create "$VOLUME" >/dev/null
+
+    echo "=== Preparing the database ==="
+    run_in_image ./bin/rails db:prepare
+
+    SEEDED="$(run_in_image ./bin/rails runner 'puts Post.count' | tail -1)"
+    if [ "$SEEDED" = "0" ]; then
+      echo "=== Seeding $POSTS posts (this is the slow part) ==="
+      run_in_image ./bin/rails runner script/seed-load-test "$POSTS" ${SEED:+--seed="$SEED"}
+    else
+      echo "=== Volume already holds $SEEDED posts — skipping seed (script/stress-server reset to reseed) ==="
+    fi
+
+    echo "=== Starting $NAME on port $PORT ==="
+    docker rm -f "$NAME" >/dev/null 2>&1 || true
+    docker run -d --name "$NAME" -p "$PORT:80" \
+      -v "$VOLUME:/rails/storage" \
+      -e RAILS_ENV=production \
+      -e SECRET_KEY_BASE="$KEY" \
+      -e RAILS_LOG_TO_STDOUT=1 \
+      -e RAILS_MAX_THREADS="${RAILS_MAX_THREADS:-3}" \
+      ${WEB_CONCURRENCY:+-e WEB_CONCURRENCY="$WEB_CONCURRENCY"} \
+      "$IMAGE" >/dev/null
+
+    for attempt in $(seq 1 30); do
+      if curl -fsS "http://localhost:$PORT/up" >/dev/null 2>&1; then
+        echo "Target is up after ${attempt}s: http://localhost:$PORT"
+        echo
+        echo "Run the suite against it with:"
+        echo "  RAILS_RUNNER=\"docker exec $NAME bin/rails runner\" \\"
+        echo "    script/stress-test smoke http://localhost:$PORT"
+        exit 0
+      fi
+      sleep 1
+    done
+    echo "The container did not become healthy — logs follow." >&2
+    docker logs "$NAME" >&2
+    exit 1
+    ;;
+
+  down)
+    docker rm -f "$NAME" >/dev/null 2>&1 || true
+    echo "Stopped. The data volume '$VOLUME' survives; 'script/stress-server reset' deletes it."
+    ;;
+
+  reset)
+    docker rm -f "$NAME" >/dev/null 2>&1 || true
+    docker volume rm "$VOLUME" >/dev/null 2>&1 || true
+    echo "Stopped and deleted the data volume. The next 'up' reseeds."
+    ;;
+
+  *)
+    echo "Usage: script/stress-server up [posts] | down | reset" >&2
+    exit 1
+    ;;
+esac

@@ -476,13 +476,16 @@ per-journey trends, content checks and error-rate thresholds. `scenarios.js` sta
 untouched so the recorded milestone 8 numbers keep their lineage; harness v2 numbers
 start a new table.
 
-#### Slice E — a production-shape target (F-8.5.4)
+#### Slice E — a production-shape target (F-8.5.4) — shipped
 
-Capacity numbers need eager loading, no reloader and a tuned Puma. The target is the
-existing `web/Dockerfile` image run locally against a seeded volume — the exact
-artifact the cluster will pull, so load-testing it also validates the image. The dev
-server stays for quick iteration; every recorded run names its target. Still a laptop:
-deployment numbers remain I-1g's, in the infrastructure repository.
+`script/stress-server` builds the `web/Dockerfile` image — the exact artifact the
+cluster will pull — and runs it locally with a seeded named volume; `script/stress-test`
+gained a `RAILS_RUNNER` override so fixture discovery reads the container's database.
+One finding came free: production's `Rails.cache` is a `FileStore` (development uses
+`:memory_store`), so every ranked-feed cache hit there reads the payload from disk
+before deserializing — the dev-mode numbers understate the feed's cost. The dev server
+stays for quick iteration; every recorded run names its target, and deployment numbers
+remain I-1g's, in the infrastructure repository.
 
 #### Slice F — Grafana Cloud as the reading surface (F-8.5.5)
 

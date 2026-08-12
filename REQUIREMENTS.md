@@ -143,7 +143,7 @@ production-ready, and so the work is visible if it ever is deployed.
 | F-8.5.1 | The stress suite is organised as independently runnable profiles — smoke, load, breakpoint, spike — each streamable to Grafana Cloud k6 | **Met** — `script/stress-test <profile>`, profiles in `script/stress/`, journeys shared via `script/stress/lib.js` |
 | F-8.5.2 | The load profile drives an open-model, mixed workload: request arrival independent of response time, journeys mixed 90-9-1 (readers, engagers, creators) across feed pages, post detail, profiles, search and writes | **Met** — `constant-arrival-rate` scenarios at per-minute rates; the reader pages `?page=1`, previously never load-tested |
 | F-8.5.3 | Every profile gates on error rate as well as latency, so a run that serves errors cannot end green | **Met** — `http_req_failed` thresholds on all four profiles, content-marker checks on every request, and write journeys assert the write landed |
-| F-8.5.4 | Capacity numbers (breakpoint, spike) are taken against a production-shape target — the container image with eager loading and tuned Puma — and every recorded run names its target | **Planned** |
+| F-8.5.4 | Capacity numbers (breakpoint, spike) are taken against a production-shape target — the container image with eager loading and tuned Puma — and every recorded run names its target | **Met** — `script/stress-server` (build, seed, serve); discovery via `RAILS_RUNNER`; production posture validated end-to-end with the smoke profile |
 | F-8.5.5 | Rails traces export to Grafana Cloud Tempo by configuration alone, correlated with k6 runs by label and time range, documented in [`docs/stress-testing.md`](docs/stress-testing.md) | **Planned** |
 
 ---
