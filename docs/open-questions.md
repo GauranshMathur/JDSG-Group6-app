@@ -48,6 +48,31 @@ case? Someone posting "good morning" every day is not spamming.
 
 **When:** not urgent. Worth deciding before anything invites real usage.
 
+### Should deleting a post keep the thread, as a tombstone?
+
+Deletion is real: `Post has_many :replies, dependent: :destroy`, so deleting a post
+destroys every reply under it — **including other people's replies**. Milestone 8.6 gave
+the resulting dead link the application's own not-found page (F-8.6.2), which is the
+cosmetic half. The other half is whether the conversation should survive at all.
+
+The alternative is Reddit's model: keep the row, blank the content, show `[deleted]`, and
+let the replies stand. It cannot be done with a hard delete — there is nothing left to
+render a tombstone from — so it means soft deletion.
+
+**Why it matters:** one person deleting their post currently destroys other people's
+writing without warning, and nothing in the interface says so. It also decides whether
+"delete" means "hidden" or "gone", which is a promise to the person deleting.
+
+**What it costs:** a `deleted_at` column, and honouring it in every place a post can
+surface — the ranked ordering, profiles, search, tag pages, reply threads, counter
+caches. Each one missed is deleted content coming back. It also needs a decision on
+whether the author's name stays attached to a tombstone.
+
+**When:** before anything invites real usage, and before deletion is advertised as
+anything stronger than "removed from view". There is precedent for the shape of the
+answer in [ADR 0005](adr/0005-posts-outlive-accounts.md), which already refuses to
+destroy user rows that other rows depend on.
+
 ---
 
 ## Technical

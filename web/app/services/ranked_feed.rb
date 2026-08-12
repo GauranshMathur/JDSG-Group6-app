@@ -3,6 +3,13 @@ class RankedFeed
   # the old whole-object cache must not have it read as an ordering, and it
   # expires on its own within the TTL.
   CACHE_KEY = "ranked_feed_order"
+  # Invalidation marks the ordering stale rather than deleting it, so a reader
+  # arriving mid-rebuild has something to serve (F-8.6.1).
+  STALE_KEY = "ranked_feed_order:stale"
+  # Held by whichever request is rebuilding. Expires on its own so a process
+  # that dies mid-rebuild leaves the feed stale for seconds rather than forever.
+  REBUILD_LOCK_KEY = "ranked_feed_order:rebuilding"
+  REBUILD_LOCK_TTL = 30.seconds
   CACHE_TTL = 5.minutes
   PAGE_SIZE = 20
 
@@ -21,16 +28,20 @@ class RankedFeed
   end
 
   def self.warm
-    Rails.cache.delete(CACHE_KEY)
-    new.send(:ordering)
+    Rails.cache.delete(REBUILD_LOCK_KEY)
+    new.send(:rebuild_and_store, claimed: false)
   end
 
   def self.bust_cache
     # Worth a span of its own: every like, repost, reply and post lands here,
     # so the rate of invalidation is what decides how often a reader pays for a
     # rebuild rather than a cache hit (F-8.2).
+    #
+    # Marking rather than deleting is the whole of F-8.6.1: deleting meant that
+    # every reader arriving before the next rebuild finished found nothing and
+    # started an identical one.
     tracer.in_span("ranked_feed.bust") do
-      Rails.cache.delete(CACHE_KEY)
+      Rails.cache.write(STALE_KEY, true, expires_in: CACHE_TTL)
     end
   end
 
@@ -60,19 +71,50 @@ class RankedFeed
   # step with the database. Identifiers make the read cheap and the page a
   # bounded lookup; the cost of showing twenty posts now tracks twenty posts.
   # Recorded with numbers in docs/stress-testing.md.
+  # One rebuild at a time (F-8.6.1). A request rebuilds when there is nothing
+  # cached to serve, or when the ordering is stale and no other request has
+  # claimed the rebuild. Everyone else serves the previous ordering, which is
+  # at most one rebuild out of date — against a ranking that divides engagement
+  # by age and so drifts continuously anyway, and a cache that already answers
+  # with a value up to CACHE_TTL old whenever nothing is being written.
   def ordering
     @ordering ||= tracer.in_span("ranked_feed.read") do |span|
-      hit = true
+      cached = Rails.cache.read(CACHE_KEY)
+      stale = Rails.cache.read(STALE_KEY).present?
+      rebuilt = false
 
-      order = Rails.cache.fetch(CACHE_KEY, expires_in: CACHE_TTL) do
-        hit = false
-        rebuild
-      end
+      order =
+        if cached.nil?
+          rebuilt = true
+          rebuild_and_store(claimed: false)
+        elsif stale && claim_rebuild
+          rebuilt = true
+          rebuild_and_store(claimed: true)
+        else
+          cached
+        end
 
-      span.set_attribute("ranked_feed.cache_hit", hit)
+      # cache_hit stays "this request did not rebuild", which is what it has
+      # always meant. served_stale is the new state: answered from an ordering
+      # that is known to be out of date because someone else is refreshing it.
+      span.set_attribute("ranked_feed.cache_hit", !rebuilt)
+      span.set_attribute("ranked_feed.served_stale", stale && !rebuilt)
       span.set_attribute("ranked_feed.item_count", order.size)
       order
     end
+  end
+
+  def claim_rebuild
+    Rails.cache.write(REBUILD_LOCK_KEY, true, unless_exist: true, expires_in: REBUILD_LOCK_TTL)
+  end
+
+  def rebuild_and_store(claimed:)
+    order = rebuild
+    Rails.cache.write(CACHE_KEY, order, expires_in: CACHE_TTL)
+    Rails.cache.delete(STALE_KEY)
+    order
+  ensure
+    Rails.cache.delete(REBUILD_LOCK_KEY) if claimed
   end
 
   def rebuild

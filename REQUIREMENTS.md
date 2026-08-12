@@ -146,6 +146,13 @@ production-ready, and so the work is visible if it ever is deployed.
 | F-8.5.4 | Capacity numbers (breakpoint, spike) are taken against a production-shape target — the container image with eager loading and tuned Puma — and every recorded run names its target | **Met** — `script/stress-server` (build, seed, serve); discovery via `RAILS_RUNNER`; production posture validated end-to-end with the smoke profile |
 | F-8.5.5 | Rails traces export to Grafana Cloud Tempo by configuration alone, correlated with k6 runs by label and time range, documented in [`docs/stress-testing.md`](docs/stress-testing.md) | **Partial** — configuration and correlation documented; OTLP export verified against a local sink; the Tempo round-trip needs the stack's credentials, so it is a user-run command |
 
+### 1.8c Absence handled deliberately (milestone 8.6)
+
+| ID | Requirement | Status |
+| --- | --- | --- |
+| F-8.6.1 | Invalidating the ranked feed leaves the previous ordering readable, and only one request rebuilds it at a time — everyone else is served the previous ordering rather than recomputing it | **Met** — `RankedFeed` marks stale and claims a rebuild lock, specced in `ranked_feed_stampede_spec.rb`. Reader p95 2.52 s → 980 ms, slowest request 8.00 s → 1.84 s ([`docs/stress-testing.md`](docs/stress-testing.md)) |
+| F-8.6.2 | A request for a record that does not exist answers 404 with the application's own page, not the generic static one, and does not distinguish "deleted" from "not yours" | **Met** — `ApplicationController#render_not_found`, specced in `spec/requests/not_found_spec.rb` |
+
 ---
 
 ## 1b. Design requirements
