@@ -17,6 +17,15 @@ const MAX_RPM = Number(__ENV.BREAKPOINT_MAX_RPM || 600);
 const STAGE_SECONDS = Number(__ENV.BREAKPOINT_STAGE_SECONDS || 60);
 const STEPS = 5;
 
+// A free Grafana Cloud project allows 100 VUs per test, so the pool stops at
+// 90. That is not a small pool for this ramp: an open model needs roughly
+// rate x latency VUs, so 600/min against a 2-second feed occupies about 20.
+// The pool only saturates once responses pass ~9 seconds — by which point the
+// abort thresholds below have already fired, and dropped_iterations is part of
+// the finding rather than a harness limit. Raise it for a local run
+// (BREAKPOINT_MAX_VUS=300) when pushing past the cloud ceiling.
+const MAX_VUS = Number(__ENV.BREAKPOINT_MAX_VUS || 90);
+
 const stages = [];
 for (let i = 1; i <= STEPS; i++) {
   stages.push({
@@ -38,8 +47,8 @@ export const options = {
       executor: "ramping-arrival-rate",
       startRate: START_RPM,
       timeUnit: "1m",
-      preAllocatedVUs: 50,
-      maxVUs: 200,
+      preAllocatedVUs: Math.min(50, MAX_VUS),
+      maxVUs: MAX_VUS,
       stages,
       exec: "feed",
     },

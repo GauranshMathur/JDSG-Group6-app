@@ -22,6 +22,15 @@ const ENGAGERS_PER_MIN = Number(__ENV.ENGAGERS_PER_MIN || 5);
 const CREATORS_PER_MIN = Number(__ENV.CREATORS_PER_MIN || 1);
 const DURATION = __ENV.LOAD_DURATION || "5m";
 
+// Grafana Cloud validates a test against the sum of every scenario's maxVUs,
+// and a free project allows 100. The reader pool is therefore 80, leaving the
+// eight signed-in VUs below inside the limit. Raise it for a local run that
+// wants more headroom (READERS_MAX_VUS=200) — the ceiling is a pool size, not
+// a target, so a bigger one costs nothing until the app is slow enough to need
+// it. Reaching it is reported as dropped_iterations, which is a capacity
+// finding rather than a harness failure.
+const READERS_MAX_VUS = Number(__ENV.READERS_MAX_VUS || 80);
+
 export const options = {
   cloud: { name: cloudName("load") },
 
@@ -48,7 +57,7 @@ export const options = {
       timeUnit: "1m",
       duration: DURATION,
       preAllocatedVUs: 20,
-      maxVUs: 100,
+      maxVUs: READERS_MAX_VUS,
       exec: "reader",
     },
     // Signed-in scenarios hold maxVUs == preAllocatedVUs deliberately: every

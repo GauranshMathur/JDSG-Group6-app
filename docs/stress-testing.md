@@ -336,6 +336,19 @@ Rates and durations are environment variables with laptop-sized defaults — the
 the top of each profile in `script/stress/`. Every profile streams to Grafana Cloud with
 `K6_MODE=stream`, arriving named `twitter-clone <profile> — <RUN_LABEL>`.
 
+**VU pools are sized for a free Grafana Cloud project.** Cloud validates a test against
+the *sum of every scenario's `maxVUs`* before it runs, and a free project allows 100 —
+so the profiles declare 88 (load), 90 (breakpoint) and 90 (spike). The number is a pool,
+not a target: an open model occupies roughly `arrival rate × latency` VUs, so the
+breakpoint's 600/min against a 2-second feed needs about 20, and the pool only saturates
+once responses pass ~9 seconds. Running out is reported as `dropped_iterations`, which
+at that point *is* the capacity finding. For a local run that wants to push past the
+cloud ceiling, raise it — `READERS_MAX_VUS`, `BREAKPOINT_MAX_VUS`, `SPIKE_MAX_VUS`:
+
+```bash
+BREAKPOINT_MAX_VUS=300 BREAKPOINT_MAX_RPM=2000 script/stress-test breakpoint
+```
+
 ## A production-shape target
 
 Milestone 8.5 slice E (F-8.5.4). Capacity numbers taken against the dev server measure
