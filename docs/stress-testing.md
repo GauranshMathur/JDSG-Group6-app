@@ -652,6 +652,10 @@ separate for that reason, and it exists because the question it answers —
 does the cost of serving a page keep growing with the database — did not
 justify the ninety minutes that seeding 100,000 posts takes.
 
+*(This projection is what prompted the ranked window, ADR 0011. It is kept as
+taken; `script/scaling-curve` has since been re-anchored to window entries,
+and the current table is in the ranked-window section below.)*
+
 **Method.** The two costs that grow are pure Ruby over N entries: rebuilding
 the cached ordering into objects (`Marshal.load`) on every request, and scoring
 and sorting every entry during a rebuild. Neither depends on what the data *is*,
@@ -699,6 +703,90 @@ already worse than linear.
 **What it is enough for.** Deciding that the ordering cache does not hold at
 100k, and that ranking belongs in the database. It is not enough to publish as
 a measurement of anything, and the 100k seed remains outstanding for F-8.3.
+
+## The ranked window: rank a week, not the archive
+
+Milestone 8.7 ([ADR 0011](adr/0011-ranked-window.md), F-8.7.x). The projection
+above said the ordering's cost grows with the corpus; the ranking itself said
+the corpus was not buying anything — none of the top twenty entries was from
+the last seven days. Since sites with far more traffic never rank their
+archive, the feed now ranks only what happened inside `RankedFeed::WINDOW`
+(7 days) and continues into everything older, newest first, off the
+`(created_at, id)` index.
+
+**The seed had to be fixed first.** `script/seed-load-test` dated every like
+and repost at the moment the seed ran, so every repost was a current event —
+exactly the shape the window ranks by, and a measurement against it would have
+measured nothing. Engagement is now dated after its post, clustered just
+behind it. This moves which entries rank; it does not move the *cost* the old
+design would have paid, because the old design scored every entry whatever its
+date — the same 43,058 rows either way. The before/after comparisons below
+therefore stand.
+
+**The microbenchmarks**, same machine, same 10k scale, measured in the app:
+
+| | whole timeline (before) | 7-day window (after) |
+| --- | --- | --- |
+| entries scored, sorted, cached | 43,058 | **13,755** |
+| rebuild | ~640 ms | **293 ms** |
+| serving a warm page | ~16 ms | **6.2 ms** |
+| an archive page (past the window) | n/a | **8.4 ms**, flat |
+
+**The load profile** — the 90-9-1 mix at the same arrival rates as the
+milestone 8.6 run, which was the best run to date:
+
+| | after the stampede fix | with the window |
+| --- | --- | --- |
+| reader p95 | 980 ms | **366 ms** |
+| engager p95 | 1.16 s | **563 ms** |
+| creator p95 | 1.56 s | **649 ms** |
+| slowest request | 1.84 s | **915 ms** |
+| average | 278 ms | **127 ms** |
+| median | 115 ms | 90 ms |
+| requests failed | 0% | 0% (of 1,334) |
+| thresholds | all passed | **all passed** |
+
+Under ordinary load, everything roughly halved. The first run in which no
+request anywhere crossed a second.
+
+**The ceiling did not move, and that is the finding.** The extended breakpoint
+ramp (600 → 6,000 requests/minute, 200 VUs) aborts at p95 > 15 s in both
+worlds: at 74 s serving **12.1 requests/second** with the window, at 68 s
+serving 11.3 without it — zero errors either way, pure queueing. Past ~12
+requests/second this dev-mode single process is bound by its three Puma
+threads and the ~80 ms of hydration and rendering every feed page pays,
+not by the ranking. Capacity from here is threads and replicas —
+an infrastructure dial, which is where this hand-off was always headed.
+
+**What the feed now shows.** Nineteen of the twenty page-one entries are from
+inside the window — ages in hours, where the unbounded ranking served nothing
+fresher than three weeks. But those twenty slots hold only **four distinct
+posts**: a fresh, heavily-reposted post fills the top through its repost
+entries. The window narrowed the duplication question and made it impossible
+to miss; it is still the open question in
+[`open-questions.md`](open-questions.md), and it is a *content* defect no
+throughput fixes.
+
+**The projection, re-anchored.** What grows now is the window, and the window
+is driven by weekly activity, not by how old the app is. Same method as
+above, sizes now meaning *entries in one week*:
+
+| window entries | score + sort | serving a page | payload |
+| --- | --- | --- | --- |
+| **13,755** — the 10k seed's measured week | 14 ms | **3.3 ms** | 0.10 MB |
+| 43,058 — the whole-timeline ordering this replaced | 42 ms | 11.6 ms | 0.32 MB |
+| 100,000 | 93 ms | 34.4 ms | 0.78 MB |
+| 430,000 | 838 ms | 223.6 ms | 3.61 MB |
+| 1,000,000 | 1,831 ms | 521.8 ms | 8.50 MB |
+
+The anchor row's 3.3 ms sits against the app's real 6.2 ms — the model is
+`Marshal.load` alone, the app adds the page's two hydration queries; the same
+ratio held for the previous anchor. The corpus no longer appears in this
+table at all: ten years of history costs the same as one. What brings the
+pain back is a 430,000-entry *week* — roughly thirty times the seed's
+activity — and that is the point at which [ADR 0010](adr/0010-stored-rank-score.md)
+should be re-judged, against numbers taken after the duplication question is
+answered.
 
 ## A production-shape target
 
