@@ -48,6 +48,34 @@ case? Someone posting "good morning" every day is not spamming.
 
 **When:** not urgent. Worth deciding before anything invites real usage.
 
+### Should the feed show a post once, or once per repost?
+
+Today the answer is "once per repost", and at the first realistically-shaped data it
+dominates the feed: at the 10,000-post seed the ranked ordering holds 43,010 entries for
+10,014 distinct posts, and the **top one hundred entries are all the same post** — the
+most-engaged post in the seed, once as itself and once per repost. Every repost is an
+independent entry carrying the post's full engagement counts, so a heavily-reposted post
+occupies as many top slots as it has reposts, and the feed's first five pages are one
+post repeated under different "reposted by" lines.
+
+This is not something milestone 8 broke — reposts have been scored this way since
+milestone 5.5. The load-test seed is simply the first data with engagement shaped like
+reality, and it made the behaviour visible.
+
+**Why it matters:** twice over. As a product, the opening pages of the feed should not be
+one post. As arithmetic, collapsing to one entry per post shrinks the ordering roughly 4×
+at this seed — and the ordering's size is the quantity every cost in
+[ADR 0010](adr/0010-stored-rank-score.md) is proportional to, so the answer here changes
+the numbers that proposal stands on.
+
+**What needs choosing:** what the one entry shows. The natural rule is the post at its
+best-scoring position, attributed as "reposted by A and 12 others" — which needs a small
+change to how the ordering is built, a change to the feed item partial, and a decision
+about whose repost gets named.
+
+**When:** before ADR 0010 is accepted or rejected — it should be judged against
+deduplicated numbers, not these.
+
 ### Should deleting a post keep the thread, as a tombstone?
 
 Deletion is real: `Post has_many :replies, dependent: :destroy`, so deleting a post

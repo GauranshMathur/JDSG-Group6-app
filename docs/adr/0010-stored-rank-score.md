@@ -35,6 +35,14 @@ A second consequence, already visible: 33,326 of the 43,058 entries at the 10k s
 a score with at least one other entry, and `sort_by` is not stable, so two rebuilds
 disagree about the tail. Deep pagination across a rebuild is not reproducible today.
 
+A third fact, found after this record was proposed and recorded as an open question in
+[`open-questions.md`](../open-questions.md): every repost is an independent entry carrying
+the post's full engagement counts, so the ordering's ~43,000 entries cover only 10,014
+distinct posts — and its top one hundred entries are a single heavily-reposted post.
+Collapsing to one entry per post shrinks the ordering roughly 4× at this seed, which
+shrinks every number in the table above. This proposal should be re-measured against a
+deduplicated ordering before it is accepted or rejected.
+
 ## Decision
 
 **Store the ranking as an indexed column and let the database order and limit.**
@@ -97,6 +105,24 @@ constant, but a rebuild still materialises the whole ordering, invalidation has 
 every chunk, and the machinery grows rather than shrinks. It treats the symptom this ADR
 removes.
 
+**Bound the candidate set by recency** — rank only what was created in the last N days,
+`WHERE created_at > ?`, the way Hacker News and Reddit front pages never rank their full
+archive. Found after this record was proposed, by asking why sites with far more traffic
+than this app will ever see don't meet this problem: they don't rank an unbounded set.
+It caps the ranking's cost by the write rate instead of the database's size, keeps the
+current formula and its behaviour inside the window, keeps N-1.2's portability (a plain
+comparison, no adapter functions), and is a few lines against a migration, a backfill and
+callbacks on three models. There is even a product argument: at the 10k seed none of the
+top twenty entries is from the last seven days — the oldest is ~25 days old — so the
+unbounded ranking is not producing a fresh feed anyway. The costs: a post older than the
+window can never resurface, however much engagement it attracts — a harder version of the
+anchoring this ADR already accepts; N is a product knob whose small end empties the feed
+in a quiet week unless something falls back to plain recency; and the cache, rebuild and
+lock machinery all survive, merely with a bounded input, where the stored score deletes
+them. It composes with the deduplication recorded in the context, and the two together
+may shrink the problem below the threshold where this decision is worth its costs —
+which is an argument for deciding both of them first.
+
 **Leave it.** Entirely defensible for a proof of concept that will never hold 100,000
 posts. The counter-argument is that the app is measured, the measurement says the shape is
 wrong, and the infrastructure track is about to run it on a cluster where "it is fine at
@@ -111,3 +137,6 @@ our scale" stops being checkable by one person on a laptop.
   is silent.
 - **Whether `RankedFeed` survives as a class.** With ordering in SQL there may be little
   left of it worth keeping.
+- **Whether this record survives the two later findings.** Deduplication and a recency
+  window both shrink the ordering this ADR exists to stop computing. Measured after them,
+  "leave it" may win — decide those first, then re-measure, then decide this.
