@@ -29,6 +29,7 @@ useful part.
 | [0007](0007-changeable-usernames.md) | Usernames are changeable; uniqueness is the only guarantee | Accepted |
 | [0008](0008-k6-load-generation.md) | k6 generates the stress-test load | Accepted |
 | [0009](0009-opentelemetry.md) | Telemetry is OpenTelemetry, not hand-rolled log lines | Accepted |
+| [0010](0010-stored-rank-score.md) | The ranking is a stored, indexed column, ordered by the database | **Proposed** |
 
 Records about infrastructure live in
 [JDSG-Group6-infra](https://github.com/GauranshMathur/JDSG-Group6-infra/tree/main/docs/adr). ADR 0008 — Terraform is verified against the
