@@ -30,6 +30,7 @@ useful part.
 | [0008](0008-k6-load-generation.md) | k6 generates the stress-test load | Accepted |
 | [0009](0009-opentelemetry.md) | Telemetry is OpenTelemetry, not hand-rolled log lines | Accepted |
 | [0010](0010-stored-rank-score.md) | The ranking is a stored, indexed column, ordered by the database | **Proposed** |
+| [0011](0011-ranked-window.md) | The ranking considers a recent window; the feed continues into the archive | Accepted |
 
 Records about infrastructure live in
 [JDSG-Group6-infra](https://github.com/GauranshMathur/JDSG-Group6-infra/tree/main/docs/adr). ADR 0008 — Terraform is verified against the

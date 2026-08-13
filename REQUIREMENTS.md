@@ -153,6 +153,14 @@ production-ready, and so the work is visible if it ever is deployed.
 | F-8.6.1 | Invalidating the ranked feed leaves the previous ordering readable, and only one request rebuilds it at a time — everyone else is served the previous ordering rather than recomputing it | **Met** — `RankedFeed` marks stale and claims a rebuild lock, specced in `ranked_feed_stampede_spec.rb`. Reader p95 2.52 s → 980 ms, slowest request 8.00 s → 1.84 s ([`docs/stress-testing.md`](docs/stress-testing.md)) |
 | F-8.6.2 | A request for a record that does not exist answers 404 with the application's own page, not the generic static one, and does not distinguish "deleted" from "not yours" | **Met** — `ApplicationController#render_not_found`, specced in `spec/requests/not_found_spec.rb` |
 
+### 1.8d The ranking considers a recent window (milestone 8.7)
+
+| ID | Requirement | Status |
+| --- | --- | --- |
+| F-8.7.1 | Only entries dated inside `RankedFeed::WINDOW` compete for the top of the feed — a post by its creation, a repost by the repost, which is how an old post re-enters the ranking ([ADR 0011](docs/adr/0011-ranked-window.md)) | **Met** — windowed `compute_ordering`, cutoff cached with the entries; specced in `feed_window_spec.rb` and `ranked_feed_window_spec.rb` |
+| F-8.7.2 | The feed continues past the window into everything older, newest first — unlimited scroll survives, and the boundary costs one bounded query, never a COUNT | **Met** — archive pages served off the `(created_at, id)` index; query shape asserted in `ranked_feed_page_cost_spec.rb` and `ranked_feed_window_spec.rb` |
+| F-8.7.3 | Old posts are removed from nothing else: search, profiles, tag pages and the post's own page are not windowed | **Met** — asserted per surface in `feed_window_spec.rb` |
+
 ---
 
 ## 1b. Design requirements

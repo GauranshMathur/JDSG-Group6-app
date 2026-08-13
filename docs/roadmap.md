@@ -567,6 +567,29 @@ decision in every place a post can surface: the ranking, profiles, search, tag
 pages, reply threads, counter caches. That is a product decision rather than a
 performance one; it is in [`docs/open-questions.md`](open-questions.md).
 
+### Milestone 8.7 — The ranking considers a recent window (F-8.7.x) — **built**
+
+The ranking scored every entry the database holds to serve twenty posts, and at the
+10k seed none of its top twenty was from the last seven days — all of the cost, none
+of the freshness. Prompted by asking why Hacker News never meets this problem: it
+ranks a bounded recent candidate set, never its archive.
+
+Now only what happened inside `RankedFeed::WINDOW` (7 days) competes for the top of
+the feed — a post by being created, an old post by being *reposted*, since the repost
+is a recent event. The feed then continues into the archive: everything older, newest
+first, straight off the `(created_at, id)` index, so unlimited scroll survives and
+nothing is removed from search, profiles, tag pages or the post's own page. Rebuild
+and page cost now track the recent write rate rather than the size of the database.
+Decision and its costs — likes alone no longer resurface an old post, the window is a
+product knob, the duplication question is narrowed but not answered — in
+[ADR 0011](adr/0011-ranked-window.md); measurements in
+[`docs/stress-testing.md`](stress-testing.md).
+
+The seed had to be fixed before the measurement meant anything: it dated every like
+and repost at the moment the seed ran, making every repost a current event — exactly
+the shape the window ranks by. Engagement is now dated after its post, clustered
+just behind it.
+
 ### Explicitly not in this block
 
 Follows, notifications, moderation and rate limiting. None are currently planned as app
