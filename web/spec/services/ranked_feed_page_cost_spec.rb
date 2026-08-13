@@ -39,7 +39,11 @@ RSpec.describe RankedFeed, type: :service do
 
       cached = Rails.cache.read(RankedFeed::CACHE_KEY)
 
-      expect(cached.flatten.compact).to all(be_a(Integer))
+      # The cutoff rides along with the entries so the archive continues
+      # exactly where the cached window ends (F-8.7.2), even when a post
+      # crosses the boundary during the cache's lifetime.
+      expect(cached[:cutoff]).to be_a(Time)
+      expect(cached[:entries].flatten.compact).to all(be_a(Integer))
     end
 
     it "keeps the cached payload proportional to the number of entries, not their contents" do
@@ -69,9 +73,22 @@ RSpec.describe RankedFeed, type: :service do
       RankedFeed.new.items
 
       first = count_queries { RankedFeed.new(page: 0).items }
-      later = count_queries { RankedFeed.new(page: 2).items }
+      later = count_queries { RankedFeed.new(page: 1).items }
 
       expect(later).to eq(first)
+    end
+
+    it "pays one extra bounded query where the window meets the archive" do
+      # The last page the window can fill asks the archive whether the feed
+      # continues — one query with a LIMIT, whatever the archive holds
+      # (F-8.7.2). Every page before it answers that from the ordering alone.
+      create_list(:post, RankedFeed::PAGE_SIZE * 3)
+      RankedFeed.new.items
+
+      first = count_queries { RankedFeed.new(page: 0).items }
+      boundary = count_queries { RankedFeed.new(page: 2).items }
+
+      expect(boundary).to eq(first + 1)
     end
 
     it "issues the same number of queries for a large feed as for a small one" do

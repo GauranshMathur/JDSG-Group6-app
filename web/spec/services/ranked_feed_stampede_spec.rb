@@ -24,7 +24,7 @@ RSpec.describe RankedFeed, type: :service do
   end
 
   def cached_ordering
-    Rails.cache.read(RankedFeed::CACHE_KEY)
+    Rails.cache.read(RankedFeed::CACHE_KEY)&.[](:entries)
   end
 
   it "keeps the previous ordering available when the feed is invalidated" do
