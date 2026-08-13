@@ -1,6 +1,7 @@
 # Latency and degradation
 
-**Status: planned, nothing built.** This is the write-up that comes before the work.
+**Status: the query-count guard (§1) is built and asserting; everything else is
+planned.** This is the write-up that comes before the work.
 
 ## Why this exists
 
@@ -21,20 +22,25 @@ Roughly in the order it bites.
 
 ### 1. Query count stops being free
 
-This is the multiplier that turns a small problem into a page-load problem. The feed currently
-issues **two queries per request** — visible in the container logs from the last CI run.
+This is the multiplier that turns a small problem into a page-load problem. The feed issues
+**two queries signed out and five signed in** — the page's posts and their reposters, then
+the session lookup and the batched like and repost lookups — flat from one post to a full
+page, measured warm against the 10k seed (N-6.1).
 
 | Queries/request | At ~0.1ms (SQLite) | At 25ms | At 100ms |
 | --- | --- | --- | --- |
 | 2 | 0.2ms | 50ms | 200ms |
+| 5 | 0.5ms | 125ms | 500ms |
 | 21 | 2ms | 525ms | 2.1s |
 
-Two is fine at any latency. The risk is that nothing notices when it becomes twenty-one — and
-**milestone 3 is exactly where that happens**: attributing posts to users means rendering
-`post.user` per row, which is the textbook N+1. Twenty posts, twenty-one queries.
-
-This is the highest-value thing to guard and the cheapest: an assertion on query count in a
-request spec catches it with no latency injection and no Postgres.
+Five is fine at any latency a healthy network produces — though the last column says a
+signed-in feed over a 100 ms link is already at half a second, which is where the timeout
+work below stops being theoretical. The 21-row is the textbook N+1 that milestone 3
+made possible — `post.user` rendered per row — and it is the row the app is guarded
+against: query counts are asserted in `feed_query_budget_spec.rb` and
+`profile_query_budget_spec.rb` (N-6.2), so the regression fails the build rather than
+being noticed as slowness. This was the cheapest guard in the document and the first
+thing built from it.
 
 ### 2. The connection pool runs dry
 
