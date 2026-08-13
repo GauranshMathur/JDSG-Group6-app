@@ -77,6 +77,32 @@ destroy user rows that other rows depend on.
 
 ## Technical
 
+### Should the feed's ranking change shape so a database can order by it?
+
+Proposed in [ADR 0010](adr/0010-stored-rank-score.md), and open because the technical
+part is settled while the product part is not.
+
+The score divides engagement by *current* age, so it changes every second for every post
+and no index can hold it. That is why the app computes the whole ranking in Ruby and
+caches the answer, and why serving a page still costs work proportional to the size of
+the database — projected at ~190 ms a page once the timeline reaches 430,000 entries.
+Making the time term a constant fixed at creation makes the score storable, indexable,
+and orderable by the database in constant time.
+
+**Why it matters:** it is the last thing keeping the feed's cost tied to the size of the
+database, and it deletes the ordering cache, the rebuild, the stale marker and the
+rebuild lock along with it.
+
+**What is actually open:** the ranking behaves differently afterwards. An old post that
+attracts a burst of engagement climbs less than it does today, because its position is
+anchored near its creation rather than divided by an age that stopped growing. Whether
+that is the feed you want is a judgement about what the feed is *for* — the ADR
+deliberately does not settle it, and picking the formula and its constant is the same
+judgement.
+
+**When:** before the app is asked to hold a timeline much larger than the 10,000-post
+seed, and before the infrastructure track runs it somewhere nobody is watching a laptop.
+
 ### Ranked full-text search
 
 Milestone 6 ships a `LIKE` search, because full-text search is adapter-specific and the app is

@@ -645,6 +645,61 @@ slices, or moving the ranking into SQL, is what removes the growth rather than s
 it; neither is needed at the scales this project measures, and both are more machinery.
 The 100k run (F-8.3) is what should decide whether that day has arrived.
 
+## Projection: what the ordering cache costs at scales not seeded
+
+Everything above is measured. **This section is not.** It is a projection, kept
+separate for that reason, and it exists because the question it answers —
+does the cost of serving a page keep growing with the database — did not
+justify the ninety minutes that seeding 100,000 posts takes.
+
+**Method.** The two costs that grow are pure Ruby over N entries: rebuilding
+the cached ordering into objects (`Marshal.load`) on every request, and scoring
+and sorting every entry during a rebuild. Neither depends on what the data *is*,
+only how much of it there is — 430,000 two-element arrays of integers cost the
+same whatever the integers are. So rows of the right shape suffice, and
+`script/scaling-curve` runs the app's own scoring formula and marshalling over
+them at each size. Every row below is a real execution at that real size, not a
+line fitted through two points.
+
+```bash
+cd web && bin/rails runner script/scaling-curve
+```
+
+| entries | score + sort | serving a page | payload |
+| --- | --- | --- | --- |
+| **43,058** — today's 10k seed | 53 ms | **12.5 ms** | 0.32 MB |
+| 100,000 | 97 ms | 32.0 ms | 0.78 MB |
+| 200,000 | 230 ms | 72.2 ms | 1.64 MB |
+| **430,000** — a 100k seed | 639 ms | **190.5 ms** | 3.61 MB |
+| 1,000,000 | 1,088 ms | 526.3 ms | 8.50 MB |
+
+**The anchor is the part that matters.** The first row is the size of the seed
+that *is* measured, and the model puts serving a page at 12.5 ms where the app
+really measures ~16 ms. That agreement is what licenses the rows beneath it.
+Without it this would be arithmetic wearing a lab coat.
+
+**What it says.** At a 100k seed, serving a warm feed page goes from ~16 ms to
+roughly **190 ms** — not a rebuild, the ordinary request that 90% of traffic
+makes. Ten times the entries costs fifteen times the time, so the growth is
+already worse than linear.
+
+**What it does not model, and must not be read off it:**
+
+- **The database.** A real rebuild also drags every row into the process. At the
+  10k seed that is ~580 ms of the ~640 ms a rebuild takes — the arithmetic is
+  53 ms of it. This corrects an earlier reading of these numbers: a rebuild is
+  dominated by moving rows into Ruby, not by scoring them, which is an argument
+  for the database doing the ordering rather than for scoring it faster.
+- **Concurrency and its GC pressure.** Requests are measured one at a time, so
+  the real figures are worse than these, not better.
+- **Your machine.** This is the sandbox container, roughly four times slower
+  than the laptop the measured runs above came from. Ratios travel; milliseconds
+  do not.
+
+**What it is enough for.** Deciding that the ordering cache does not hold at
+100k, and that ranking belongs in the database. It is not enough to publish as
+a measurement of anything, and the 100k seed remains outstanding for F-8.3.
+
 ## A production-shape target
 
 Milestone 8.5 slice E (F-8.5.4). Capacity numbers taken against the dev server measure
