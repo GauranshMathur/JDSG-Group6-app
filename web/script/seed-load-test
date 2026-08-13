@@ -187,16 +187,29 @@ like_rows = []
 repost_rows = []
 replies = 0
 
+# Engagement happens after its post, clustered just behind it — rand**4 puts
+# about half of it in the first tenth of the post's lifetime. Dating every
+# like and repost `now` (as this seed originally did) made every repost a
+# current event, which is exactly the shape the ranked window ranks by
+# (F-8.7.1) — a seed dated that way measures nothing about it.
+post_created_at = Post.where(id: post_ids).pluck(:id, :created_at).to_h
+engaged_at = ->(post_id) do
+  created = post_created_at[post_id]
+  created + ((now - created).to_f * rng.rand**4)
+end
+
 post_ids.each_with_index do |post_id, i|
   weight = weights[i] / max_weight
   next if weight.zero?
 
   all_user_ids.sample((weight * PEAK_LIKES).round, random: rng).each do |user_id|
-    like_rows << { user_id: user_id, post_id: post_id, created_at: now, updated_at: now }
+    at = engaged_at.call(post_id)
+    like_rows << { user_id: user_id, post_id: post_id, created_at: at, updated_at: at }
   end
 
   all_user_ids.sample((weight * PEAK_REPOSTS).round, random: rng).each do |user_id|
-    repost_rows << { user_id: user_id, post_id: post_id, created_at: now, updated_at: now }
+    at = engaged_at.call(post_id)
+    repost_rows << { user_id: user_id, post_id: post_id, created_at: at, updated_at: at }
   end
 
   (weight * PEAK_REPLIES).round.times do
@@ -204,7 +217,7 @@ post_ids.each_with_index do |post_id, i|
       user_id: all_user_ids[rng.rand(all_user_ids.size)],
       body: random_body(rng),
       parent_id: post_id,
-      created_at: rng.rand(30 * 24 * 3600).seconds.ago
+      created_at: engaged_at.call(post_id)
     )
     replies += 1
   end

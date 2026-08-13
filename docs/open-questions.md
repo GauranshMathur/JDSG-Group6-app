@@ -74,7 +74,9 @@ change to how the ordering is built, a change to the feed item partial, and a de
 about whose repost gets named.
 
 **When:** before ADR 0010 is accepted or rejected — it should be judged against
-deduplicated numbers, not these.
+deduplicated numbers, not these. The ranked window
+([ADR 0011](adr/0011-ranked-window.md)) narrows this without answering it: a post
+heavily reposted *this week* still occupies one slot per repost.
 
 ### Should deleting a post keep the thread, as a tombstone?
 
@@ -111,25 +113,22 @@ Proposed in [ADR 0010](adr/0010-stored-rank-score.md), and open because the tech
 part is settled while the product part is not.
 
 The score divides engagement by *current* age, so it changes every second for every post
-and no index can hold it. That is why the app computes the whole ranking in Ruby and
-caches the answer, and why serving a page still costs work proportional to the size of
-the database — projected at ~190 ms a page once the timeline reaches 430,000 entries.
-Making the time term a constant fixed at creation makes the score storable, indexable,
-and orderable by the database in constant time.
-
-**Why it matters:** it is the last thing keeping the feed's cost tied to the size of the
-database, and it deletes the ordering cache, the rebuild, the stale marker and the
-rebuild lock along with it.
+and no index can hold it — the app computes the ranking in Ruby and caches the answer.
+Since [ADR 0011](adr/0011-ranked-window.md) that ranking considers only a recent window,
+so its cost tracks the recent write rate rather than the size of the database; the
+stored score would go further and make ordering a constant-time index read, deleting the
+ordering cache, the rebuild, the stale marker and the rebuild lock along with it.
 
 **What is actually open:** the ranking behaves differently afterwards. An old post that
-attracts a burst of engagement climbs less than it does today, because its position is
-anchored near its creation rather than divided by an age that stopped growing. Whether
-that is the feed you want is a judgement about what the feed is *for* — the ADR
-deliberately does not settle it, and picking the formula and its constant is the same
-judgement.
+attracts a burst of engagement climbs less, because its position is anchored near its
+creation rather than divided by an age that stopped growing. Whether that is the feed
+you want is a judgement about what the feed is *for* — the ADR deliberately does not
+settle it, and picking the formula and its constant is the same judgement.
 
-**When:** before the app is asked to hold a timeline much larger than the 10,000-post
-seed, and before the infrastructure track runs it somewhere nobody is watching a laptop.
+**When:** after the repost-duplication question above is answered and the feed is
+re-measured with the window in place — both change every number the proposal stands
+on, and the re-measurement may show "leave it" now wins. Before the app is asked to
+hold a timeline much larger than the seeds, in any case.
 
 ### Ranked full-text search
 
