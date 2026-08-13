@@ -24,7 +24,7 @@ Where things are written down:
 | `docs/roadmap.md` | Milestones, what shipped, and the plan for the next ones |
 | `docs/design-principles.md` | The 90-9-1 rule, and ownership over visibility |
 | `docs/database.md`, `docs/ci-cd.md` | The detail for each |
-| `docs/latency.md` | How the app should degrade when the database is slow. Planned, not built — see N-6.x |
+| `docs/latency.md` | How the app should degrade when the database is slow. The query-count guard is built; the rest is planned — see N-6.x |
 | `docs/open-questions.md` | Decisions not yet taken, each with why it matters and when it is needed |
 | `docs/adr/` | Decision records — why a choice was made, and what it cost |
 
@@ -33,8 +33,10 @@ Where things are written down:
 to their authors, who can edit and delete their own. Every account has a unique, changeable username,
 a public `/@username` profile page, and an editable display name, bio, and avatar; a sidebar
 is the application shell. Engagement is complete: likes, reposts, replies (with a post detail
-page), and hashtags (parsed, linked, with tag pages). The feed is ranked by engagement and
-cached. Search finds posts by body text and users by username via plain LIKE. Profile avatars
+page), and hashtags (parsed, linked, with tag pages). The feed ranks the last week by
+engagement and continues into everything older, newest first
+([ADR 0011](docs/adr/0011-ranked-window.md)); the ordering is cached. Search finds posts by
+body text and users by username via plain LIKE. Profile avatars
 and post images are supported via Active Storage with WebP conversion and EXIF stripping.
 No follows, no jobs, no infra.
 
@@ -214,22 +216,26 @@ docker build -t twitter-clone-web web   # Build the image
 
 ## Current milestone
 
-**The feature block is complete; milestone 8 — stress and telemetry — is built and its
-findings are recorded.** Milestones 1–7 (including 5.5 and 6.5) are built, tested and
-merged. Milestone 8 delivered the first measurements: shaped seed data
-(`script/seed-load-test`), OpenTelemetry instrumentation
-([ADR 0009](docs/adr/0009-opentelemetry.md)), k6 stress scenarios
-([ADR 0008](docs/adr/0008-k6-load-generation.md)) runnable locally or streamed to
-Grafana Cloud k6, and findings with numbers in
-[`docs/stress-testing.md`](docs/stress-testing.md). It measured and fixed nothing by
-design. What follows is **milestone 8.5 — load-testing harness v2**, planned in
-`docs/roadmap.md` (F-8.5.x): open-model k6 profiles — smoke, load, breakpoint, spike —
-with a 90-9-1 journey mix and error-rate gates, a production-shape target (the container
-image), and Grafana Cloud as the reading surface for k6 results and Tempo traces alike.
-Then the measurements (10k re-baseline, the outstanding 100k closing F-8.3) and only
-then the feed improvement, measured with the better instruments — the number to beat is
-feed p95 2.31 s against a 2,000 ms budget. New app *features* remain a scope expansion
-to raise with the user, not a default.
+**Milestones 8 through 8.7 are built and merged.** Milestone 8 measured and fixed
+nothing by design; 8.5 rebuilt the harness as open-model k6 profiles — smoke, load,
+breakpoint, spike, 90-9-1 journey mix, error-rate gates, a production-shape target,
+Grafana Cloud as the reading surface. What the better instruments found was then fixed
+in three measured steps: the ordering cached as identifiers (N-6.8), one rebuild at a
+time plus the app's own 404 (8.6, F-8.6.x), and the ranked window (8.7,
+[ADR 0011](docs/adr/0011-ranked-window.md)) — the feed ranks the last seven days and
+continues chronologically into the archive, so its cost tracks weekly activity rather
+than the size of the database. Measured at the 10k seed: warm page 6 ms, load-profile
+latencies roughly halved with nothing over a second, and the remaining ceiling is Puma
+threads, not the feed. Numbers in [`docs/stress-testing.md`](docs/stress-testing.md).
+
+**What is next, in order:** the repost-duplication decision — the top of the feed
+holds few distinct posts because every repost is an independent entry; a product call
+recorded in [`docs/open-questions.md`](docs/open-questions.md) — then re-measuring and
+judging [ADR 0010](docs/adr/0010-stored-rank-score.md) (stored rank score, still
+Proposed) against those numbers. Outstanding from 8.5: the 100k seed run (F-8.3), the
+profiles against the production-shape image, and the user-run Tempo round-trip
+(F-8.5.5). New app *features* remain a scope expansion to raise with the user, not a
+default.
 
 **Infrastructure lives in its own repository.** [JDSG-Group6-infra](https://github.com/GauranshMathur/JDSG-Group6-infra) holds the AWS
 reference design, the Terraform, the Kubernetes manifests and the decisions behind them. This
