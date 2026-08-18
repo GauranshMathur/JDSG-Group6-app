@@ -27,6 +27,7 @@ Where things are written down:
 | `docs/latency.md` | How the app should degrade when the database is slow. The query-count guard is built; the rest is planned — see N-6.x |
 | `docs/open-questions.md` | Decisions not yet taken, each with why it matters and when it is needed |
 | `docs/adr/` | Decision records — why a choice was made, and what it cost |
+| `docs/agents/` | Per-repo configuration the engineering skills read — issue tracker, triage labels, domain-doc layout. See "Agent skills" below |
 
 **Current state: milestones 1–7 done (including 5.5 and 6.5).** The Rails app exists in
 `web/`, the feed works, and accounts exist — register, sign in, sign out, reset. Posts belong
@@ -276,3 +277,21 @@ Two rules that carry forward:
 - Do not upgrade Ruby or Rails major versions without asking.
 - Do not weaken a CI security gate to make a build pass. If a finding is genuinely not
   actionable, say so and ask.
+
+## Agent skills
+
+Configuration the engineering skills read. Each file is fetched only when a skill needs
+it — keep the detail there and these pointers short.
+
+### Issue tracker
+
+GitHub Issues, via the `gh` CLI. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+The five canonical role names, used as-is. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context — `CONTEXT.md` at the root, decision records in `docs/adr/`. See
+`docs/agents/domain.md`.
