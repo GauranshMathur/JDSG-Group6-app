@@ -1,0 +1,42 @@
+# Accepted, unactionable findings for the image scan gate in .github/workflows/ci.yml.
+#
+# This file suppresses findings ONLY on the gating Trivy step. The SARIF report
+# step is deliberately left unfiltered, so everything here still reaches GitHub
+# code scanning and stays visible — suppressed from blocking, not from view.
+#
+# Nothing goes in here because it is inconvenient. The bar is: the finding has no
+# fix this repository can apply. A finding we can fix gets fixed.
+#
+# ---------------------------------------------------------------------------
+# thruster's precompiled Go binary — Go standard library, not thruster's own code
+# ---------------------------------------------------------------------------
+#
+# The thruster gem ships a prebuilt Go binary (exe/<arch>/thrust) which the image
+# runs as its HTTP front: CMD ["./bin/thrust", "./bin/rails", "server"].
+#
+# Trivy reports every CVE affecting the Go toolchain a binary was compiled with,
+# whether or not the binary reaches those packages. thruster 0.1.25 — the current
+# release as of 2026-08-18 — is built with Go v1.26.5. The fixes below need Go
+# 1.25.13, 1.26.6 or 1.27.0-rc.3, so there is no thruster release that clears
+# them: the fix belongs to Basecamp rebuilding the gem on a patched toolchain.
+#
+# `ignore-unfixed: true` does not filter them, because Trivy counts them fixed —
+# Go shipped patches even though thruster has not shipped a rebuild.
+#
+# Severity: 8 HIGH, 0 CRITICAL. Six are denial-of-service; the two that are not
+# are the IDNA and html/template entries. Nothing is deployed today, so the
+# present exposure is nil — this exists so the gate keeps catching what it can.
+#
+# You do not have to remember to check this. The workflow re-runs the same scan
+# with no ignore file and FAILS the moment one of these stops appearing — that is
+# the upstream fix landing. When it does: bump thruster, delete the line it names,
+# and if this file empties, delete it and the trivyignores: line in ci.yml.
+#
+CVE-2026-33818  # encoding/asn1 — DoS
+CVE-2026-39821  # x/net/idna — privilege escalation via Punycode label processing
+CVE-2026-46600  # x/net/dns/dnsmessage — DoS via invalid DNS record parsing
+CVE-2026-56853  # net/http — DoS on unencrypted HTTP/2 connections
+CVE-2026-56858  # html/template — XSS via pathological input
+CVE-2026-56859  # encoding/xml — DoS via decoding recursion depth
+CVE-2026-56860  # net/url — DoS from quadratic complexity in path parsing
+CVE-2026-56862  # crypto/tls — DoS via indefinite KeyUpdate messages

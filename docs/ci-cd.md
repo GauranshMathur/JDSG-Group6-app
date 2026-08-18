@@ -155,6 +155,30 @@ runner, and paying the emulation cost on every pull request buys no extra signal
 **Image tagging:** every image carries an immutable `sha-<commit>` tag alongside the
 semantic version, so a deployment can always be pinned to an exact build.
 
+## Suppressed scan findings, and how they un-suppress themselves
+
+The Trivy image scan fails on HIGH and CRITICAL findings that have a fix available.
+Some do not have one *we* can apply: a dependency ships a precompiled binary, an
+advisory lands against the toolchain it was built with, and no release of that
+dependency yet carries the rebuild. `ignore-unfixed` does not help, because the
+upstream language has shipped a patch even though the dependency has not.
+
+Those go in [`.github/trivyignore`](../.github/trivyignore), one line per finding,
+each saying why it cannot be actioned here and what would let it be deleted. The bar
+is "no fix this repository can apply" — never "this is inconvenient".
+
+Two details make it an exception rather than a hole:
+
+- **The file is not at the repository root.** Trivy auto-loads a root `.trivyignore`
+  into every scan, which would filter the SARIF report as well as the gate. Naming it
+  explicitly on the gating step suppresses blocking only; every suppressed finding
+  still reaches GitHub code scanning.
+- **A later step re-runs the same scan with no ignore file and fails when a
+  suppressed finding stops appearing.** That absence is the upstream fix arriving.
+  The build failing on good news is deliberate — a warning is scrolled past, and the
+  remedy is deleting the line and bumping the dependency it names. Nobody has to
+  remember to go and look.
+
 ## Configuring SonarQube
 
 The SonarQube job checks for a `SONAR_TOKEN` secret and skips the scan when it is absent, so
