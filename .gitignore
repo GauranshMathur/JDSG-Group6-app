@@ -1,0 +1,5 @@
+# Repository-wide ignores. Application-specific ones live in web/.gitignore.
+
+# macOS Finder metadata. No leading slash, so this matches at any depth —
+# the repository root, web/, docs/ and anywhere else Finder has been.
+.DS_Store
