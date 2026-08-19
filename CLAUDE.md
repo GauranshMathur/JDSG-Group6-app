@@ -230,7 +230,13 @@ than the size of the database. Measured at the 10k seed: warm page 6 ms, load-pr
 latencies roughly halved with nothing over a second, and the remaining ceiling is Puma
 threads, not the feed. Numbers in [`docs/stress-testing.md`](docs/stress-testing.md).
 
-**What is next, in order:** the repost-duplication decision — the top of the feed
+**What is next, in order:** the fixes from the
+[2026-08-18 architecture review](docs/architecture-reviews/2026-08-18.md), guarded
+before they start — the `review` k6 profile (`script/stress-test review`) exercises
+findings 1–6 over HTTP so each fix lands against a before/after measurement, and the
+open-findings table in
+[`docs/architecture-reviews/README.md`](docs/architecture-reviews/README.md) tracks
+what remains. After those: the repost-duplication decision — the top of the feed
 holds few distinct posts because every repost is an independent entry; a product call
 recorded in [`docs/open-questions.md`](docs/open-questions.md) — then re-measuring and
 judging [ADR 0010](docs/adr/0010-stored-rank-score.md) (stored rank score, still

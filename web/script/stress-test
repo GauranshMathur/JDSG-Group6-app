@@ -12,6 +12,9 @@
 #   script/stress-test load               # 90-9-1 mix at a steady arrival rate
 #   script/stress-test breakpoint         # climb until the feed breaks
 #   script/stress-test spike              # viral burst, then watch recovery
+#   script/stress-test review             # guards for the architecture-review
+#                                         # findings (~4 min; trips the sign-in
+#                                         # limiter at the end, deliberately)
 #   script/stress-test load http://localhost:3000
 #   script/stress-test http://localhost:3000    # legacy scenarios, explicit URL
 #
@@ -82,9 +85,9 @@ if [ $# -ge 1 ]; then
 fi
 
 case "$PROFILE" in
-  scenarios|smoke|load|breakpoint|spike) ;;
+  scenarios|smoke|load|breakpoint|spike|review) ;;
   *)
-    echo "Unknown profile '$PROFILE' — use scenarios, smoke, load, breakpoint or spike." >&2
+    echo "Unknown profile '$PROFILE' — use scenarios, smoke, load, breakpoint, spike or review." >&2
     exit 1
     ;;
 esac
@@ -118,12 +121,16 @@ FIXTURES="$($RAILS_RUNNER '
   mega = User.joins(:posts).group("users.id").order(Arel.sql("COUNT(posts.id) DESC")).first
   post_ids = Post.top_level.order(likes_count: :desc).limit(20).pluck(:id)
   emails = User.where("email_address LIKE ?", "%@loadtest.example.com").order(:id).limit(20).pluck(:email_address)
-  puts [ mega&.username, post_ids.join(","), emails.join(",") ].join("|")
+  hot_tag = Tag.joins(:posts).group("tags.id").order(Arel.sql("COUNT(posts.id) DESC")).first
+  archive_post_id = Post.top_level.where("created_at < ?", 7.days.ago).order(created_at: :asc).limit(1).pluck(:id).first
+  puts [ mega&.username, post_ids.join(","), emails.join(","), hot_tag&.name, archive_post_id ].join("|")
 ' 2>/dev/null | tail -1)"
 
 MEGA_USER="$(echo "$FIXTURES" | cut -d"|" -f1)"
 POST_IDS="$(echo "$FIXTURES" | cut -d"|" -f2)"
 EMAILS="$(echo "$FIXTURES" | cut -d"|" -f3)"
+HOT_TAG="$(echo "$FIXTURES" | cut -d"|" -f4)"
+ARCHIVE_POST_ID="$(echo "$FIXTURES" | cut -d"|" -f5)"
 LIKE_POST_ID="$(echo "$POST_IDS" | cut -d"," -f1)"
 LOAD_EMAIL="$(echo "$EMAILS" | cut -d"," -f1)"
 
@@ -131,6 +138,7 @@ echo "  Profile:      $PROFILE"
 echo "  Mega-account: @${MEGA_USER:-<none>}"
 echo "  Posts:        $(echo "$POST_IDS" | awk -F, '{print NF}') candidates, first ${LIKE_POST_ID:-<none>}"
 echo "  Accounts:     $(echo "$EMAILS" | awk -F, '{print NF}') sign-in candidates"
+echo "  Hot tag:      #${HOT_TAG:-<none>}, archive post ${ARCHIVE_POST_ID:-<none>}"
 echo
 
 if [ -z "$MEGA_USER" ]; then
@@ -172,6 +180,8 @@ esac
   --env "LIKE_POST_ID=$LIKE_POST_ID" \
   --env "LOAD_EMAIL=$LOAD_EMAIL" \
   --env "LOAD_PASSWORD=${LOAD_PASSWORD:-loadtest1}" \
+  --env "HOT_TAG=$HOT_TAG" \
+  --env "ARCHIVE_POST_ID=$ARCHIVE_POST_ID" \
   --env "SEARCH_TERMS=${SEARCH_TERMS:-}" \
   --env "RUN_LABEL=${RUN_LABEL:-}" \
   --env "READERS_PER_MIN=${READERS_PER_MIN:-}" \

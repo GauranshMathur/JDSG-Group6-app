@@ -47,3 +47,10 @@ recording why it will not be.
 When a finding is closed, mark it here with what closed it — a pull request, or the ADR
 that refused it. A finding silently disappearing from this table is the failure mode this
 table exists to prevent.
+
+Findings 1–6 have load-side guards ahead of their fixes: the `review` k6 profile
+(`web/script/stress/review.js`, run as `script/stress-test review`) exercises each one over
+HTTP — the two 500s as a red gate, the rate limiter as a live refusal, tag/search/profile
+latency and the churn comparison as recorded trends. The guards do not close a finding;
+they are what a fix is measured against. Baselines in
+[`docs/stress-testing.md`](../stress-testing.md).
