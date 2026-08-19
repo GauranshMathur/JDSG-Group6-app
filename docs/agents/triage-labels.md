@@ -32,3 +32,17 @@ gh label create ready-for-human --description "Requires human implementation"   
 The repo also carries GitHub's stock `question`, `duplicate` and `invalid` labels. None of
 them carry a triage role here — `needs-info` is the one that means "waiting on the
 reporter", not `question`.
+
+## Provenance labels
+
+Two more labels exist, and they are not triage roles — they record where a batch of issues
+came from, so that "what did the scanner find" and "what did the review find" remain
+answerable months later with `gh issue list --label <name>`:
+
+| Label | Meaning |
+| --- | --- |
+| `sonarqube` | Filed from a SonarQube scan finding |
+| `architecture-review` | Filed from a pass in `docs/architecture-reviews/` |
+
+Both were created on 2026-08-19, along with the four triage labels above, when the first
+batches were filed.
