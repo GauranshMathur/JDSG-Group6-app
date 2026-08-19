@@ -43,7 +43,7 @@ export function ok(res, marker) {
 // hands you (say) the sidebar sign-out form's token, and every other POST
 // made with it is a silent 422. That exact mistake hid in the milestone 8
 // suite — its churn writer never landed a single like.
-function csrfToken(body) {
+export function csrfToken(body) {
   const meta = body && body.match(/<meta name="csrf-token" content="([^"]+)"/);
   if (meta) return meta[1];
   const input = body && body.match(/name="authenticity_token"[^>]*value="([^"]+)"/);
