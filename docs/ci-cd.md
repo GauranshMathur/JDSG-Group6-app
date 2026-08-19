@@ -7,7 +7,7 @@ of them, and `release.yml` ships after merge.
 
 | Workflow | Trigger | What it does |
 | --- | --- | --- |
-| `ci.yml` | Pull requests touching `web/**`, `.github/**` or `sonar-project.properties` | Workflow lint, release-tooling tests, RuboCop, RSpec, container build + image scan + DAST, SonarQube |
+| `ci.yml` | Pull requests, and merges to `main`, touching `web/**`, `.github/**` or `sonar-project.properties` | Workflow lint, release-tooling tests, RuboCop, RSpec, container build + image scan + DAST (pull requests only), SonarQube |
 | `security.yml` | **Every** pull request | Brakeman, bundler-audit, Trivy filesystem scan |
 | `release.yml` | After merge to `main` | Derives the version, builds and publishes the image, tags and releases |
 
@@ -214,6 +214,21 @@ logging in:
 curl -s "https://sonarcloud.io/api/settings/values?component=GauranshMathur_JDSG-Group6-app" \
   | grep -o 'sonar.autoscan.enabled[^}]*'
 ```
+
+**`main` is analysed too, which is why `ci.yml` now has a `push` trigger.** A pull request
+analysis is measured against the target branch's analysis; with nothing ever analysing
+`main`, there is no baseline to measure against and the dashboard freezes at whatever ran
+last. Automatic Analysis used to cover this, and turning it off removed it — a hole worth
+naming, because it opens silently and every check stays green while it does. The container
+build, image scan and DAST stay pull-request-only: `release.yml` builds and publishes the
+same image on merge, so running them again would spend five minutes twice on one commit.
+
+**What Sonar looks at, and what it does not.** `sonar.sources` is `web/app`, `web/lib` and
+`web/config` — application code, including the ERB templates. Workflow files, the Dockerfile
+and the Compose files are deliberately outside it: Trivy's config scan and `actionlint`
+already cover those, and they cover them on *every* pull request rather than only the ones
+touching `web/**`. The division is that Sonar reads the application and the security
+workflow reads the plumbing.
 
 **Coverage comes from the suite, not from a second run.** `spec/spec_helper.rb` starts
 SimpleCov before anything else loads and writes `web/coverage/coverage.json`; the Test job

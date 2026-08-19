@@ -21,6 +21,19 @@ on:
       - ".github/**"
       - "sonar-project.properties"
 
+  # Merges too, for SonarQube's sake. A pull request analysis is measured
+  # against the main branch's, so if main is never analysed there is nothing to
+  # measure against and the dashboard freezes at whatever ran last. This used
+  # to be covered by SonarQube Cloud's Automatic Analysis, which is now off
+  # because it cannot coexist with a CI scan — see docs/ci-cd.md.
+  push:
+    branches:
+      - main
+    paths:
+      - "web/**"
+      - ".github/**"
+      - "sonar-project.properties"
+
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
@@ -103,6 +116,11 @@ jobs:
     name: Container build, image scan and DAST
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    # Pull requests only. On a merge, release.yml builds and publishes this
+    # image anyway, so running the five-minute build, scan and DAST here as
+    # well would spend it twice on the same commit. The merge still runs the
+    # cheap jobs, and SonarQube, which is what the push trigger is for.
+    if: github.event_name == 'pull_request'
     permissions:
       contents: read
       security-events: write
