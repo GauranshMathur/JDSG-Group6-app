@@ -21,8 +21,8 @@ class PostsController < ApplicationController
   end
 
   def show
-    @post = Post.eager_load(:user).includes(user: { avatar_attachment: :blob }, images_attachments: :blob).find(params[:id])
-    @replies = @post.replies.eager_load(:user).includes(user: { avatar_attachment: :blob }, images_attachments: :blob).order(created_at: :asc, id: :asc)
+    @post = Post.for_rendering.find(params[:id])
+    @replies = @post.replies.for_rendering.order(created_at: :asc, id: :asc)
     @reply = Post.new
     @liked_post_ids = liked_post_ids_for([ @post ] + @replies)
     @reposted_post_ids = reposted_post_ids_for([ @post ] + @replies)

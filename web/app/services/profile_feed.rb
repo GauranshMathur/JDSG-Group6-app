@@ -17,8 +17,10 @@ class ProfileFeed
   private
 
   def build_feed
-    posts = @user.posts.top_level.eager_load(:user)
-                 .includes(user: { avatar_attachment: :blob }, images_attachments: :blob).to_a
+    posts = @user.posts.top_level.for_rendering.to_a
+    # The nested post: hash is Post.for_rendering's chain respelled — an
+    # includes cannot name a scope on a nested association. If for_rendering
+    # changes, this is the one copy to change with it.
     reposts = @user.reposts.eager_load(:user, post: :user)
                    .includes(
                      user: { avatar_attachment: :blob },

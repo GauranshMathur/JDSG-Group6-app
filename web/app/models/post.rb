@@ -21,19 +21,23 @@ class Post < ApplicationRecord
   after_create_commit  { RankedFeed.bust_cache }
   after_destroy_commit { RankedFeed.bust_cache }
 
-  # Newest first, with id breaking ties so the ordering is total and stable.
-  # Without the tie-break, posts sharing a created_at could swap places between
-  # requests and be shown twice or skipped by the cursor below.
+  # Everything a rendered post row touches: the author (joined into the post
+  # query — eager_load, so attribution costs no extra round trip), the
+  # author's avatar and the post's images (preloaded in a fixed number of
+  # queries). Left lazy, each of these is one query per post — invisible on
+  # SQLite and seconds of page load once the database is over a network. See
+  # docs/latency.md.
   #
-  # The author is loaded with the page because every rendered post shows it.
-  # Left lazy this is one query per post — invisible on SQLite and seconds of
-  # page load once the database is over a network. See docs/latency.md.
-  #
-  # eager_load rather than includes: includes preloads the users in a second
-  # query, while eager_load joins them into the one that fetches the posts. So
-  # attributing posts to their authors costs no extra round trip at all.
+  # Every page that renders posts composes this scope rather than respelling
+  # the chain: timelines through :timeline below, detail pages directly. When
+  # rendering grows a new association, it is added here and every page gets it.
+  scope :for_rendering, -> { eager_load(:user).includes(user: { avatar_attachment: :blob }, images_attachments: :blob) }
+
+  # Newest first, with id breaking ties so the ordering is total and stable —
+  # without it, posts sharing a created_at could swap places between requests
+  # and be shown twice or skipped by the cursor below.
   scope :top_level, -> { where(parent_id: nil) }
-  scope :timeline, -> { top_level.eager_load(:user).order(created_at: :desc, id: :desc) }
+  scope :timeline, -> { top_level.for_rendering.order(created_at: :desc, id: :desc) }
   scope :search, ->(query) { where("posts.body LIKE ?", "%#{sanitize_sql_like(query)}%") }
 
   # Keyset pagination: the page of posts strictly older than the given position.
