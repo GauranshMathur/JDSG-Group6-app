@@ -864,3 +864,50 @@ Two mechanics worth knowing:
   is all it takes for spans to POST to `/v1/traces`. The Grafana Cloud round-trip needs
   the stack's credentials, so that last step is run by whoever holds them.
 
+
+## The review profile: guards taken before the fixes
+
+The [2026-08-18 architecture review](architecture-reviews/2026-08-18.md) produced nine
+candidates; six of them are observable over HTTP. Before any fix lands, each gets a
+load-side guard — the `review` k6 profile (`script/stress-test review`), one scenario per
+finding, sequenced so they cannot measure each other. The baseline below is the pre-fix
+state at the clean 10,000-post seed, dev server, 3 Puma threads — the numbers every fix
+gets judged against.
+
+| Scenario | Finding | Baseline (pre-fix) | Verdict |
+| --- | --- | --- | --- |
+| Warm feed (reference) | — | med 38 ms, p95 110 ms | the bar the others are read against |
+| Tag page | 1 — the 42-query N+1 | med 82 ms, p95 161 ms | ~2× the warm feed's median |
+| Search page | 1 | med 139 ms, p95 343 ms | slowest read page in the app |
+| Search case parity | 2 | green on SQLite | **goes red on PostgreSQL** until the scope folds case — that is its job |
+| Profile pages 1–5 | 5 — full-archive materialisation | med 98 ms, p95 212 ms | every page pays the whole account history |
+| Feed under reply churn | 6 | p95 **484 ms** | 4.4× warm p95 — replies bust a cache they can never appear in |
+| Feed under archive-like churn | 6 | p95 **290 ms** | 2.6× warm p95 — likes outside the window force byte-identical rebuilds |
+| Hostile paging | 4 — `?page=-1` | **RED — 6 × 500** | `/?page=-1` and `/@user?page=-1`, three attempts each, all 500 |
+| Sign-in hammer | 3 — the unreached limiter | **4 of 12 refused** | the limiter is real over HTTP; only the spec suite cannot see it |
+
+Reading it:
+
+- **The run fails, and is supposed to.** `review_server_errors` gates on zero and counted
+  six — finding 4's two 500s, demonstrated rather than argued. The fix turns this gate
+  green, and the gate then pins it.
+- **Every other hostile input was already handled**: `page=0`, `page=99999`, garbage
+  cursors on tags and search, a missing post's 404. The scenario pins those too, so a fix
+  to the page parameter cannot regress its neighbours.
+- **The churn pair is finding 6 in one comparison.** Reader latency under reply churn and
+  archive-like churn against the same warm feed: 484 / 290 vs 110. Neither event can
+  change the ranked window's content, so after the invalidation fix both rows should sit
+  at warm-feed levels — that is the acceptance criterion, written down before the fix.
+- **The rate limiter guard is green and stays.** It exists because zero specs reach any
+  of the three `rate_limit` declarations (the test cache store is `:null_store`), so
+  until finding 3's seam exists, this is the only automated proof the brute-force
+  protection does anything. If a fix to finding 3 breaks the real limiter, this is what
+  notices.
+- Tag, search and profile trends are context, not gates that fail today: at 10k on SQLite
+  a 42-query page is slow relative to the feed, not slow absolutely. The N+1's
+  authoritative guard is the query-budget spec that lands with fix 1; these trends are
+  the HTTP-level record of the same defect, and of what the fix buys.
+
+The profile signs in twice and then deliberately trips the sign-in limiter as its final
+scenario, so leave ~3 minutes before running any signing profile (smoke, load,
+scenarios) afterwards.
