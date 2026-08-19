@@ -60,6 +60,12 @@ group :development, :test do
 
   # Test data factories [https://github.com/thoughtbot/factory_bot_rails]
   gem "factory_bot_rails", "~> 6.4"
+
+  # Coverage measurement, started at the top of spec/spec_helper.rb. The JSON
+  # formatter is not decoration: SimpleCov JSON is the only coverage format
+  # SonarQube's Ruby analyser reads — it does not accept LCOV.
+  gem "simplecov", "~> 0.22", require: false
+  gem "simplecov_json_formatter", "~> 0.1", require: false
 end
 
 group :development do
