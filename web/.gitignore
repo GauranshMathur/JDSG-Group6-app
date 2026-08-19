@@ -35,3 +35,6 @@
 
 # Ignore master key for decrypting credentials and more.
 /config/master.key
+
+# Ignore coverage reports (SimpleCov). Consumed by CI as an artifact.
+/coverage/

@@ -21,6 +21,19 @@ on:
       - ".github/**"
       - "sonar-project.properties"
 
+  # Merges too, for SonarQube's sake. A pull request analysis is measured
+  # against the main branch's, so if main is never analysed there is nothing to
+  # measure against and the dashboard freezes at whatever ran last. This used
+  # to be covered by SonarQube Cloud's Automatic Analysis, which is now off
+  # because it cannot coexist with a CI scan — see docs/ci-cd.md.
+  push:
+    branches:
+      - main
+    paths:
+      - "web/**"
+      - ".github/**"
+      - "sonar-project.properties"
+
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
@@ -88,10 +101,26 @@ jobs:
           RAILS_ENV: test
         run: bundle exec rspec --format documentation
 
+      # Consumed by the SonarQube job. Uploaded even when the suite fails, so
+      # a red run still reports the coverage it managed to record.
+      - name: Upload the coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: web/coverage/coverage.json
+          if-no-files-found: error
+          retention-days: 7
+
   container:
     name: Container build, image scan and DAST
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    # Pull requests only. On a merge, release.yml builds and publishes this
+    # image anyway, so running the five-minute build, scan and DAST here as
+    # well would spend it twice on the same commit. The merge still runs the
+    # cheap jobs, and SonarQube, which is what the push trigger is for.
+    if: github.event_name == 'pull_request'
     permissions:
       contents: read
       security-events: write
@@ -270,10 +299,14 @@ jobs:
         if: always()
         run: docker rm -f web || true
 
+  # Needs the suite's coverage, so it waits for it. The coverage report is
+  # produced in the Test job and passed here as an artifact rather than by
+  # re-running RSpec: one suite run, two consumers.
   sonarqube:
     name: SonarQube
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    needs: test
     steps:
       - uses: actions/checkout@v4
         with:
@@ -281,25 +314,24 @@ jobs:
           # introduced them.
           fetch-depth: 0
 
-      # The scan is skipped rather than failed when the project has no SonarQube
-      # credentials yet, so this job does not block pull requests before the
-      # server is configured. Add SONAR_TOKEN (and SONAR_HOST_URL for a
-      # self-hosted server) to repository secrets to switch it on.
-      - name: Check for SonarQube credentials
-        id: sonar_check
-        env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-        run: |
-          if [ -n "$SONAR_TOKEN" ]; then
-            echo "configured=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "configured=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::SONAR_TOKEN is not set — skipping the SonarQube scan."
-          fi
+      # SimpleCov records absolute paths, and every job in a workflow checks
+      # out to the same /home/runner/work/<repo>/<repo>, so the paths written
+      # by the Test job resolve here. Restoring it anywhere else would leave
+      # Sonar unable to match coverage to files.
+      - name: Download the coverage report
+        uses: actions/download-artifact@v4
+        with:
+          name: coverage
+          path: web/coverage
 
+      # No credential guard here, deliberately. This job used to skip itself
+      # when SONAR_TOKEN was absent, which is why the project went unscanned
+      # for weeks behind a green check: a scan that quietly does nothing is
+      # indistinguishable from one that passed. A missing token now fails.
       - name: SonarQube scan
-        if: steps.sonar_check.outputs.configured == 'true'
         uses: SonarSource/sonarqube-scan-action@v8
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+          # SonarQube Cloud. Not a secret — it is the same public endpoint for
+          # every project, and keeping it in a secret is how it ended up unset.
+          SONAR_HOST_URL: https://sonarcloud.io
