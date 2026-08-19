@@ -17,13 +17,40 @@ Infer the repo from `git remote -v` — `gh` does this automatically when run in
 
 ## How issues relate to the rest of the project
 
-This repo already keeps its planned work in files, not tickets:
-`docs/roadmap.md` holds the milestones, `REQUIREMENTS.md` holds the numbered
-requirements, and `docs/open-questions.md` holds decisions not yet taken. GitHub issues
-are the surface for work that arrives from outside that plan — bug reports, requests, and
-anything a skill needs to publish as a ticket. When an issue turns out to be a milestone
-or a requirement, the roadmap and `REQUIREMENTS.md` stay the record; the issue points at
-them rather than duplicating them.
+**The docs say why; the issues say what is next; each links the other.**
+
+The files remain the record, and there is no plan to move them into tickets:
+`docs/roadmap.md` holds the milestones, `REQUIREMENTS.md` the numbered requirements,
+`docs/adr/` the decisions, `docs/open-questions.md` the decisions not yet taken, and
+`docs/architecture-reviews/` what a review pass found. Those are written to be read a year
+later; an issue tracker is not.
+
+What changed on 2026-08-19 is that **identified work also gets an issue**, so that "what
+are we actually doing next" has one answer instead of being reconstructed from four
+documents. The two are cross-linked and neither is a copy of the other:
+
+- The issue carries the *work* — what to change, where, how to verify, and enough context
+  to start without reading everything else. It links back to the document that explains why.
+- The document carries the *record* and gains a column or a line naming the issue. It keeps
+  its entry whatever happens to the issue, because an issue closed as "not doing this" is
+  still a thing that was found and decided. `docs/architecture-reviews/README.md` is the
+  worked example.
+
+So: a finding, a requirement or a milestone is not deleted from the docs when its issue
+closes, and an issue is not the place to argue a decision — that belongs in an ADR, with
+the issue pointing at it.
+
+**Where an issue lives.** Application work is an issue on this repository. Infrastructure
+work is an issue on
+[JDSG-Group6-infra](https://github.com/GauranshMathur/JDSG-Group6-infra), on the same terms —
+the repository boundary decides the tracker, exactly as it decides the pull request. The
+handful of app changes the infrastructure track forces (PostgreSQL, a shared cache, S3 media)
+are issues *here*, because that is where the change lands, and they link to the infrastructure
+issue that needs them.
+
+**Labels.** `sonarqube` and `architecture-review` mark where a batch of issues came from, so
+"what did the scanner find" and "what did the review find" stay answerable with
+`gh issue list --label`. Triage labels are in [`triage-labels.md`](triage-labels.md).
 
 An issue that becomes work still follows the repo's rules in `CLAUDE.md`: its own
 branch off `main`, Conventional Commits, and a pull request that is green before it
