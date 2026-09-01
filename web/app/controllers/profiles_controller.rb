@@ -6,7 +6,7 @@ class ProfilesController < ApplicationController
 
   def show
     @user = User.find_by!(username: params[:username].downcase)
-    feed = ProfileFeed.new(@user, page: (params[:page].to_i if params[:page].present?) || 0)
+    feed = ProfileFeed.new(@user, page: page_param)
     @feed_items = feed.items
     @next_page = feed.next_page
     all_posts = @feed_items.map(&:post)
