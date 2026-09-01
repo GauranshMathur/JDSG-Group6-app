@@ -6,6 +6,20 @@ module TimelinePagination
 
   private
 
+    # The one place a page number is read off the query string, so it is the
+    # one place a bad one is refused. Both feed controllers previously carried
+    # the same unvalidated expression, and so carried the same defect: a
+    # negative page reached `entries.drop(-20)`, which raises — a 500 on the
+    # feed and on every profile, reachable by typing a URL.
+    #
+    # Anything that is not a page number reads as the first page rather than an
+    # error: `to_i` is 0 for nil and for "banana", and the floor catches "-1".
+    # There is no ceiling — a page past the end is a legitimate question with
+    # an empty answer, and both feeds already answer it that way.
+    def page_param
+      [ params[:page].to_i, 0 ].max
+    end
+
     # Loaded here rather than left for the view, because next_cursor_for asks
     # for its size first. On an unloaded relation that size is a separate COUNT
     # query, and the rows are then fetched again to render — two round trips for
