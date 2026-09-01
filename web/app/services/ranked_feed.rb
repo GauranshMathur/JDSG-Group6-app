@@ -113,7 +113,7 @@ class RankedFeed
         shortfall = PAGE_SIZE - ranked.size
         rows = archive.offset([ start - entries.size, 0 ].max)
                       .limit(shortfall + 1)
-                      .pluck(:id)
+                      .ids
         @more = rows.size > shortfall
         ranked + rows.first(shortfall).map { |id| [ id, nil ] }
       end

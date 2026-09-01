@@ -5,7 +5,10 @@
 #
 #   1. Install the pg gem:   bundle config set --local with postgres && bundle install
 #   2. Start Postgres:       docker compose -f infra/docker/docker-compose.yml up -d
-#   3. Point the app at it:  export DATABASE_URL=postgres://twitter_clone:twitter_clone@localhost:5432/twitter_clone_development
+#   3. Point the app at it:  export DATABASE_URL=postgres://USER:PASSWORD@localhost:5432/twitter_clone_development
+#      (the compose file holds the local values; they are not repeated here,
+#       because a credential-shaped string in source is a finding whether or
+#       not it opens anything)
 #   4. Prepare the schema:   bin/rails db:prepare
 #
 # DATABASE_URL overrides every setting below, adapter included, so no code or
