@@ -17,10 +17,13 @@
         data: { controller: "submit-on-enter", action: "keydown->submit-on-enter#keydown" } %>
 
   <div class="composer__row">
+    <%# The label's only content is an aria-hidden emoji, so it gives the input
+        no accessible name — the input carries its own. %>
     <label class="composer__image-btn" title="Add images">
       <span aria-hidden="true">&#x1F4F7;</span>
       <%= form.file_field :images,
             multiple: true,
+            "aria-label": "Add images",
             accept: "image/png,image/jpeg,image/webp,image/gif",
             class: "composer__file",
             data: { action: "change->composer-preview#preview" } %>
