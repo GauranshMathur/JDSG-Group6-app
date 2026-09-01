@@ -18,8 +18,23 @@ class Post < ApplicationRecord
   validate :images_count_within_limit
 
   after_save :sync_tags
-  after_create_commit  { RankedFeed.bust_cache }
-  after_destroy_commit { RankedFeed.bust_cache }
+
+  # A reply changes its parent's reply counter, which is a score input, so the
+  # question is always "is the ranked row affected?" — the parent for a reply,
+  # itself for a top-level post. A reply can never be a ranked row of its own:
+  # the ordering is built from top_level.
+  #
+  # There is deliberately no after_update_commit. What is cached is the ordering
+  # — [post_id, reposter_id] pairs — and posts are re-read on every request, so
+  # an edited body is visible without invalidating anything, and an edit changes
+  # no score input. A spec renders the feed after an edit to keep that honest.
+  #
+  # On destroy the same question is asked one beat late: an archived post's
+  # reposts are already gone, so ranks? can answer false for a row the ordering
+  # still names. That degrades correctly rather than silently — hydrate drops
+  # an entry whose post no longer exists.
+  after_create_commit  { RankedFeed.bust_cache if RankedFeed.ranks?(parent || self) }
+  after_destroy_commit { RankedFeed.bust_cache if RankedFeed.ranks?(parent || self) }
 
   # Everything a rendered post row touches: the author (joined into the post
   # query — eager_load, so attribution costs no extra round trip), the
