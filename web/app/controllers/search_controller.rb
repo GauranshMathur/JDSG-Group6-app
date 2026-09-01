@@ -1,19 +1,15 @@
 class SearchController < ApplicationController
-  include TimelinePagination
-
   allow_unauthenticated_access
 
   def show
     @query = params[:q].to_s.strip
 
     if @query.present?
-      @posts = page_of_posts(Post.search(@query).timeline)
-      @next_cursor = next_cursor_for(@posts)
-      @liked_post_ids = liked_post_ids_for(@posts)
-      @reposted_post_ids = reposted_post_ids_for(@posts)
+      @page = TimelinePage.from_scope(Post.search(@query).timeline, after: params[:after],
+                                      viewer: Current.user) { |cursor| search_path(q: @query, after: cursor) }
       @users = User.search(@query).limit(10)
     else
-      @posts = []
+      @page = TimelinePage.empty
       @users = []
     end
   end

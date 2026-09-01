@@ -11,6 +11,11 @@ class RepliesController < ApplicationController
     else
       @post = @parent
       @replies = @parent.replies.for_rendering.order(created_at: :asc, id: :asc)
+      @engagement = TimelinePage.new(
+        items: ([ @post ] + @replies).map { |post| FeedItem.new(post: post, reposter: nil, sort_time: post.created_at, score: 0) },
+        next_url: nil,
+        viewer: Current.user
+      )
       render "posts/show", status: :unprocessable_content
     end
   end

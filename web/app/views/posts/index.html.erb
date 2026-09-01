@@ -12,17 +12,15 @@
   <% end %>
 
   <div id="timeline" class="timeline">
-    <% @feed_items.each do |feed_item| %>
+    <% @page.items.each do |feed_item| %>
       <%= render "posts/feed_item", feed_item: feed_item,
-            liked_post_ids: @liked_post_ids, reposted_post_ids: @reposted_post_ids %>
+            liked_post_ids: @page.liked_post_ids, reposted_post_ids: @page.reposted_post_ids %>
     <% end %>
 
-    <% if @feed_items.empty? %>
+    <% if @page.empty? %>
       <p id="timeline_empty" class="timeline__empty">Nothing here yet. Be the first to post.</p>
     <% end %>
   </div>
 
-  <% if @next_page %>
-    <%= link_to "Load more", posts_path(page: @next_page), class: "pagination__link" %>
-  <% end %>
+  <%= render "posts/pagination", next_url: @page.next_url %>
 </div>

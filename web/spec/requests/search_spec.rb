@@ -48,14 +48,14 @@ RSpec.describe "Search" do
 
     # F-6.4
     it "paginates results using cursor pagination" do
-      (TimelinePagination::PAGE_SIZE + 1).times do |i|
+      (TimelinePage::PAGE_SIZE + 1).times do |i|
         create(:post, body: "searchable post #{i}", created_at: i.minutes.ago)
       end
 
       get search_path(q: "searchable")
 
-      expect(response.body.scan(/class="post"/).size).to eq(TimelinePagination::PAGE_SIZE)
-      expect(response.body).to include("Load older posts")
+      expect(response.body.scan(/class="post"/).size).to eq(TimelinePage::PAGE_SIZE)
+      expect(response.body).to include("Load more")
     end
 
     it "renders posts in reverse chronological order" do
