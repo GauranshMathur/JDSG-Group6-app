@@ -25,6 +25,13 @@ an indexed join.
 **Search is a plain `LIKE` over post bodies and usernames**, behaving identically on SQLite and
 PostgreSQL.
 
+> **Amended 2026-09-01.** That last clause was aspirational when written: `Post.search` folded
+> case on neither side, so it matched only because SQLite's LIKE ignores ASCII case, and it
+> would have stopped matching the day the app moved to PostgreSQL. The decision — a plain
+> `LIKE` rather than a search engine — is unchanged and still holds; what was untrue was the
+> claim of parity. Both scopes now fold case in SQL and name an ESCAPE character
+> ([#97](https://github.com/GauranshMathur/JDSG-Group6-app/pull/97)).
+
 ## Consequences
 
 ### Hashtags

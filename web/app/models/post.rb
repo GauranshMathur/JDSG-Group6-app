@@ -53,7 +53,23 @@ class Post < ApplicationRecord
   # and be shown twice or skipped by the cursor below.
   scope :top_level, -> { where(parent_id: nil) }
   scope :timeline, -> { top_level.for_rendering.order(created_at: :desc, id: :desc) }
-  scope :search, ->(query) { where("posts.body LIKE ?", "%#{sanitize_sql_like(query)}%") }
+  # Both sides of the comparison are folded, so the match does not depend on
+  # which database is running. SQLite's LIKE ignores ASCII case and PostgreSQL's
+  # does not, so this scope worked only by accident of the adapter — F-6.3
+  # claimed parity it did not have (finding 2 of the 2026-08-18 review).
+  #
+  # ESCAPE is not optional either. sanitize_sql_like escapes % and _ with a
+  # backslash, but SQLite gives LIKE no default escape character, so without
+  # this clause the backslash matched literally and searching for "100%" found
+  # nothing at all. PostgreSQL happens to default to backslash; naming it keeps
+  # the two adapters answering the same question.
+  #
+  # Case folding here is ASCII-only, because that is what both databases' LOWER
+  # does without a collation. A Turkish dotted capital will still not match its
+  # lowercase form — recorded rather than implied.
+  scope :search, ->(query) {
+    where("LOWER(posts.body) LIKE ? ESCAPE '\\'", "%#{sanitize_sql_like(query.downcase)}%")
+  }
 
   # Keyset pagination: the page of posts strictly older than the given position.
   # Offset pagination would shift as new posts arrive at the head of the
