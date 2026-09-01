@@ -26,19 +26,19 @@
     <section class="search-results__posts">
       <h2 class="search-results__heading">Posts</h2>
       <div id="timeline" class="timeline">
-        <%= render partial: "posts/post", collection: @posts,
-                  locals: { liked_post_ids: @liked_post_ids, reposted_post_ids: @reposted_post_ids } %>
+        <% @page.items.each do |feed_item| %>
+          <%= render "posts/feed_item", feed_item: feed_item,
+                liked_post_ids: @page.liked_post_ids, reposted_post_ids: @page.reposted_post_ids %>
+        <% end %>
 
-        <% if @posts.empty? && @users.empty? %>
+        <% if @page.empty? && @users.empty? %>
           <p class="timeline__empty">No results found for "<%= @query %>".</p>
-        <% elsif @posts.empty? %>
+        <% elsif @page.empty? %>
           <p class="timeline__empty">No matching posts.</p>
         <% end %>
       </div>
 
-      <%= render "posts/pagination",
-            next_cursor: @next_cursor,
-            url: search_path(q: @query, after: @next_cursor) if @posts.present? %>
+      <%= render "posts/pagination", next_url: @page.next_url %>
     </section>
   <% else %>
     <p class="timeline__empty">Enter a search term above.</p>

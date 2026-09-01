@@ -4,8 +4,8 @@
   <div class="post-detail__parent">
     <%= render partial: "posts/post", locals: {
           post: @post,
-          liked_post_ids: @liked_post_ids,
-          reposted_post_ids: @reposted_post_ids } %>
+          liked_post_ids: @engagement.liked_post_ids,
+          reposted_post_ids: @engagement.reposted_post_ids } %>
   </div>
 
   <% if authenticated? %>
@@ -24,8 +24,8 @@
         <p class="reply__context">Replying to <a href="<%= profile_path(@post.user.username) %>">@<%= @post.user.username %></a></p>
         <%= render partial: "posts/post", locals: {
               post: reply,
-              liked_post_ids: @liked_post_ids,
-              reposted_post_ids: @reposted_post_ids } %>
+              liked_post_ids: @engagement.liked_post_ids,
+              reposted_post_ids: @engagement.reposted_post_ids } %>
       </div>
     <% end %>
   </div>

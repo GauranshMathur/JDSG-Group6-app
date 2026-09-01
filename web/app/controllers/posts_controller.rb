@@ -1,6 +1,4 @@
 class PostsController < ApplicationController
-  include TimelinePagination
-
   # Reading is public; only writing needs an account. See docs/design-principles.md.
   allow_unauthenticated_access only: [ :index, :show ]
 
@@ -12,20 +10,21 @@ class PostsController < ApplicationController
 
   def index
     @post = Post.new
-    feed = RankedFeed.new(page: page_param)
-    @feed_items = feed.items
-    @next_page = feed.next_page
-    all_posts = @feed_items.map(&:post)
-    @liked_post_ids = liked_post_ids_for(all_posts)
-    @reposted_post_ids = reposted_post_ids_for(all_posts)
+    @page = TimelinePage.from_feed(RankedFeed.new(page: TimelinePage.page_number(params[:page])),
+                                   viewer: Current.user) { |page| posts_path(page: page) }
   end
 
   def show
     @post = Post.for_rendering.find(params[:id])
     @replies = @post.replies.for_rendering.order(created_at: :asc, id: :asc)
     @reply = Post.new
-    @liked_post_ids = liked_post_ids_for([ @post ] + @replies)
-    @reposted_post_ids = reposted_post_ids_for([ @post ] + @replies)
+    # The detail page is not a timeline — it is one post and its replies — but
+    # it renders the same rows, so it borrows the same engagement lookup.
+    @engagement = TimelinePage.new(
+      items: ([ @post ] + @replies).map { |post| FeedItem.new(post: post, reposter: nil, sort_time: post.created_at, score: 0) },
+      next_url: nil,
+      viewer: Current.user
+    )
   end
 
   def create
@@ -37,9 +36,7 @@ class PostsController < ApplicationController
         format.html { redirect_to posts_path }
       end
     else
-      feed = RankedFeed.new(page: 0)
-      @feed_items = feed.items
-      @next_page = feed.next_page
+      @page = TimelinePage.from_feed(RankedFeed.new(page: 0), viewer: Current.user) { |page| posts_path(page: page) }
       render :index, status: :unprocessable_content
     end
   end

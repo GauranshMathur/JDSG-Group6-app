@@ -51,9 +51,9 @@
         <span class="reply-count__count"><%= post.replies_count %></span>
       <% end %>
       <%= render "likes/like_button", post: post,
-            liked: (defined?(liked_post_ids) && liked_post_ids&.include?(post.id)) %>
+            liked: liked_post_ids.include?(post.id) %>
       <%= render "reposts/repost_button", post: post,
-            reposted: (defined?(reposted_post_ids) && reposted_post_ids&.include?(post.id)) %>
+            reposted: reposted_post_ids.include?(post.id) %>
     </footer>
   </div>
 </article>
