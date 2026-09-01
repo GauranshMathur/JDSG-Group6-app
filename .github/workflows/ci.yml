@@ -169,11 +169,15 @@ jobs:
       # this repository, so failing on it would teach everyone to ignore the
       # gate.
       #
-      # The ignore file lives at .github/trivyignore rather than the repository
-      # root on purpose: Trivy auto-loads a root .trivyignore into *every* scan,
-      # which would silently filter the SARIF report below as well. Naming it
-      # explicitly here suppresses the gate only — a suppressed finding still
-      # reaches code scanning. Suppressed from blocking, not from view.
+      # There are no suppressions. There were eight, all of them Go findings in
+      # the precompiled binary the thruster gem ships; thruster 0.1.26 rebuilt
+      # on a patched toolchain and cleared every one, so .github/trivyignore and
+      # the machinery that watched it are gone. If a suppression is ever needed
+      # again, bring both back together — the file named explicitly here (never
+      # a root .trivyignore, which Trivy would also apply to the SARIF report
+      # below, hiding the finding instead of merely not blocking on it), and a
+      # second unsuppressed scan that fails when an entry stops appearing. Git
+      # history at this commit has the shape.
       - name: Trivy image scan
         uses: aquasecurity/trivy-action@v0.36.0
         with:
@@ -181,43 +185,7 @@ jobs:
           image-ref: twitter-clone-web:${{ github.sha }}
           severity: CRITICAL,HIGH
           ignore-unfixed: true
-          trivyignores: .github/trivyignore
           exit-code: "1"
-
-      # A suppression is a debt, not a decision, and nothing here would ever
-      # have told us the debt could be paid. This re-runs the same scan with no
-      # ignore file and fails when a suppressed finding has stopped appearing —
-      # meaning the upstream fix landed and both the entry and the pin above it
-      # should go. It fails on good news deliberately: a warning gets scrolled
-      # past, and the remedy is deleting two lines.
-      - name: Trivy image scan (unsuppressed, to detect stale entries)
-        uses: aquasecurity/trivy-action@v0.36.0
-        with:
-          scan-type: image
-          image-ref: twitter-clone-web:${{ github.sha }}
-          severity: CRITICAL,HIGH
-          ignore-unfixed: true
-          format: json
-          output: trivy-unsuppressed.json
-          exit-code: "0"
-
-      - name: Fail when a suppressed finding has been fixed upstream
-        run: |
-          set -euo pipefail
-          present=$(jq -r '[.Results[]?.Vulnerabilities[]?.VulnerabilityID] | unique | .[]' trivy-unsuppressed.json)
-          stale=""
-          while read -r cve; do
-            printf '%s\n' "$present" | grep -qx "$cve" || stale="${stale}${cve} "
-          done < <(grep -oE '^CVE-[0-9]+-[0-9]+' .github/trivyignore)
-
-          if [ -n "$stale" ]; then
-            echo "::error::Fixed upstream — these suppressions are now stale: ${stale}"
-            echo "The finding no longer appears, so the exception is no longer earning its place."
-            echo "Remove those lines from .github/trivyignore, and bump the dependency they name."
-            echo "If the file ends up empty, delete it and the trivyignores: line in this workflow."
-            exit 1
-          fi
-          echo "Every suppressed finding is still present. The exception still earns its place."
 
       - name: Trivy image scan (report all severities)
         uses: aquasecurity/trivy-action@v0.36.0
