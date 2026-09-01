@@ -48,12 +48,14 @@ RSpec.describe "Rate limiting" do
   describe "registering" do
     it "refuses further attempts once the limit is reached" do
       11.times do |i|
-        post registrations_path, params: {
+        post registration_path, params: {
           user: { email_address: "taken#{i}@example.com", password: "password123", password_confirmation: "password123" }
         }
       end
 
-      expect(response).to have_http_status(:redirect).or have_http_status(:too_many_requests)
+      expect(response).to redirect_to(new_registration_path)
+      follow_redirect!
+      expect(response.body).to include("Try again later.")
     end
   end
 end

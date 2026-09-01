@@ -8,14 +8,6 @@ require "rails_helper"
 # window are filled from the archive — older posts, newest first — with one
 # bounded query, never a count.
 RSpec.describe RankedFeed, type: :service do
-  around do |example|
-    original_store = Rails.cache
-    Rails.cache = ActiveSupport::Cache::MemoryStore.new
-    example.run
-  ensure
-    Rails.cache = original_store
-  end
-
   describe "what the window caches (F-8.7.1)" do
     it "caches only entries from inside the window, with the cutoff that bounds them" do
       recent = create(:post)

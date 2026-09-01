@@ -11,14 +11,6 @@ RSpec.describe "RankedFeed telemetry" do
 
   # The test environment uses :null_store, so nothing is ever cached and every
   # read would report a miss. Same swap as the caching specs.
-  around do |example|
-    original_store = Rails.cache
-    Rails.cache = ActiveSupport::Cache::MemoryStore.new
-    example.run
-  ensure
-    Rails.cache = original_store
-  end
-
   before do
     OpenTelemetry.tracer_provider.add_span_processor(
       OpenTelemetry::SDK::Trace::Export::SimpleSpanProcessor.new(exporter)

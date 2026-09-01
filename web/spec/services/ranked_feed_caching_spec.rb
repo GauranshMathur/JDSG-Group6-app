@@ -13,14 +13,6 @@ require "rails_helper"
 # than zero. The invalidation examples below are unchanged and still the point
 # of the file.
 RSpec.describe RankedFeed, type: :service do
-  around do |example|
-    original_store = Rails.cache
-    Rails.cache = ActiveSupport::Cache::MemoryStore.new
-    example.run
-  ensure
-    Rails.cache = original_store
-  end
-
   # F-6.5.1
   describe "caching" do
     it "computes the ranking once and reuses it" do
