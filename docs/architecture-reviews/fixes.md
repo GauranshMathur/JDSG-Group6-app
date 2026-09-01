@@ -85,6 +85,108 @@ feed and profile budgets that already existed, which is the reason this was foun
 
 ---
 
+## Finding 4 — nothing owned "a page of a timeline" (the 500s half)
+
+**Pull request:** [#94](https://github.com/GauranshMathur/JDSG-Group6-app/pull/94) ·
+**Issue:** [#86](https://github.com/GauranshMathur/JDSG-Group6-app/issues/86)
+
+**What was wrong.** Both feed controllers carried the same unvalidated expression for the
+page number, so both carried the same defect: `page=-1` reached `entries.drop(-20)` and
+raised — a 500 on `/posts` and on every `/@username`, reachable by typing a URL.
+
+**What replaced it.** `page_param` in the concern both controllers already include: one
+reader, so one place refuses a bad value. Anything that is not a page number reads as the
+first page; there is no ceiling, because a page past the end is a legitimate question with
+an empty answer.
+
+**What it cost.** Only the bug is fixed. The rest of finding 4 — one `Timeline` interface,
+one `PAGE_SIZE` instead of three, one next-page protocol instead of three, splitting
+`TimelinePagination`'s two halves — is structural, has no measurable behaviour change, and
+is still open. Bundling it here would have buried a two-line fix inside a refactor and
+muddied the measurement.
+
+**Measured.**
+
+| | Before | After |
+| --- | --- | --- |
+| `review_server_errors` | 6 | **0** |
+| k6 exit code | non-zero (threshold crossed) | **0** |
+| Checks succeeded | 99.64% | **100.00%** |
+
+**Guard.** `spec/requests/timeline_paging_spec.rb`, red first. It also pins `page=0`,
+`page=99999` and a non-numeric page, so the fix cannot trade one input for another.
+
+**And the guard itself got a guard.** While measuring, one run had 31% of its requests
+returning 500 and k6 still exited zero: `review_server_errors` is only incremented inside
+the hostile scenario, so a 500 anywhere else was invisible to the exit code. The profile
+now carries `checks: rate>0.99` and `http_req_failed: rate<0.01`. It has already earned
+that twice — see the note under finding 6.
+
+---
+
+## Finding 6 — invalidation did not know what the ranking knows
+
+**Pull request:** [#95](https://github.com/GauranshMathur/JDSG-Group6-app/pull/95) ·
+**Issue:** [#88](https://github.com/GauranshMathur/JDSG-Group6-app/issues/88)
+
+**What was wrong.** `compute_ordering` reads exactly two sets — top-level posts created
+inside the window, and reposts made inside it — scored from each post's like, repost and
+reply counters. `bust_cache` was bounded by neither: every like, every reply, every repost
+on any post of any age marked the ordering stale, forcing a rebuild that returned a
+byte-identical result.
+
+**What replaced it.** `RankedFeed.ranks?` — the window predicate asked about one row, which
+both sides now call. A post is ranked when it is top-level and either recent enough itself
+**or carried in by a recent repost**. That second half is not a detail: **635 of this
+corpus's 10,008 top-level posts are archived rows held in the window by a repost**, and a
+naive `created_at >= cutoff` check would have silently stopped busting for every one of
+them — trading a performance win for a stale feed.
+
+**What it cost.** An archived post now pays one indexed `EXISTS` on the write path, where
+before it paid nothing and made every reader pay for a rebuild. A recent post pays nothing:
+the comparison short-circuits. On destroy the predicate is asked one beat late — an
+archived post's reposts are already gone, so a row the ordering still names can answer
+"not ranked" and skip a bust. That degrades correctly rather than silently: `hydrate`
+already drops an entry whose post no longer exists.
+
+**Where the review was wrong, and this is the interesting part.** Finding 6 said a reply
+can never affect the ordering, because `top_level` guarantees a reply is never in it. True
+of the reply itself — but a reply increments its **parent's** `replies_count`, and that
+counter is a score input. So a reply to a ranked post *must* bust. Measured on this corpus,
+**95.4% of replies land on a ranked row**, so the review's stated acceptance criterion —
+"after the fix, both churn trends should sit at warm-feed levels" — was only ever going to
+be true of one of them.
+
+**Measured, deterministically.** The predicate is asked directly about real rows, so the
+answer does not depend on the machine:
+
+| | Before | After |
+| --- | --- | --- |
+| Ranked rows in the corpus | — | 2,912 of 10,008 top-level posts (29.1%) |
+| A like on a random post busts | 100% | **33.0%** |
+| A reply busts | 100% | 95.4% — correctly, its parent is usually ranked |
+
+**Measured over HTTP**, `script/stress-test review` on the same seed snapshot:
+
+| | Before | After |
+| --- | --- | --- |
+| Archive-churn feed, p95 | 246 ms | **62 ms** |
+| Reply-churn feed, p95 | 250 ms | 215 ms — unchanged, as it should be |
+| Warm feed, p95 | 122 ms | 156 ms |
+
+Reading it: readers under archive churn are now **faster than the warm-feed reference**,
+because they are served from cache instead of paying for rebuilds nobody needed. Reply
+churn does not move, and now we know why.
+
+**A caveat on the HTTP numbers, stated rather than buried.** During this fix's measurement
+the container's SQLite began failing under load with `disk I/O error` — on queries as
+small as `SELECT … FROM sessions WHERE id = 1`, which is not something application code
+causes. Runs carried between 0 and 25% failed requests as a result, and the archive-churn
+figure above is the median of four runs that each reproduced it (p95 of 62, 65, 80 and
+115 ms against a 246 ms baseline). The deterministic table above is the load-bearing
+evidence; the HTTP numbers agree with it. The new `http_req_failed` threshold is what
+caught the instability at all — in one run every single check passed while a quarter of
+requests were failing, because no check inspects a write request.
 ## Finding 5 — `ProfileFeed` materialised the whole archive to serve twenty rows
 
 **Pull request:** [#96](https://github.com/GauranshMathur/JDSG-Group6-app/pull/96) ·
