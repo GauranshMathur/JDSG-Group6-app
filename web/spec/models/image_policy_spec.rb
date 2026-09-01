@@ -62,7 +62,6 @@ RSpec.describe "Image policy" do
       expect(exif_fields(processed.download)).to be_empty
     end
   end
-
 end
 
 # The allow-list was written in four places — two model constants and two

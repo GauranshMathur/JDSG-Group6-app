@@ -49,7 +49,6 @@ class User < ApplicationRecord
   validates :bio, length: { maximum: MAX_BIO_LENGTH }
   validate :avatar_content_type_allowed
 
-  AVATAR_CONTENT_TYPES = %w[image/png image/jpeg image/webp image/gif].freeze
   AVATAR_THUMBNAIL_SIZE = [ 48, 48 ].freeze
   AVATAR_DISPLAY_SIZE = [ 128, 128 ].freeze
 
@@ -61,18 +60,18 @@ class User < ApplicationRecord
   end
 
   def avatar_thumbnail
-    avatar.variant(resize_to_fill: AVATAR_THUMBNAIL_SIZE, format: :webp, saver: { strip: true })
+    ImagePolicy.variant(avatar, resize_to_fill: AVATAR_THUMBNAIL_SIZE)
   end
 
   def avatar_display
-    avatar.variant(resize_to_fill: AVATAR_DISPLAY_SIZE, format: :webp, saver: { strip: true })
+    ImagePolicy.variant(avatar, resize_to_fill: AVATAR_DISPLAY_SIZE)
   end
 
   private
 
   def avatar_content_type_allowed
     return unless avatar.attached?
-    unless AVATAR_CONTENT_TYPES.include?(avatar.blob.content_type)
+    unless ImagePolicy::CONTENT_TYPES.include?(avatar.blob.content_type)
       errors.add(:avatar, "must be a PNG, JPEG, WebP or GIF image")
     end
   end

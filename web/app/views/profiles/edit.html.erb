@@ -17,7 +17,7 @@
     <div class="auth__avatar-preview">
       <%= render "shared/avatar", user: @user, size: :display %>
     </div>
-    <%= form.file_field :avatar, accept: "image/png,image/jpeg,image/webp,image/gif", class: "auth__input" %>
+    <%= form.file_field :avatar, accept: ImagePolicy::ACCEPT, class: "auth__input" %>
     <p class="auth__hint">PNG, JPEG, WebP or GIF. Will be resized and converted to WebP.</p>
 
     <%= form.label :username, "Username", class: "auth__label" %>

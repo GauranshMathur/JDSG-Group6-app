@@ -123,8 +123,8 @@ production-ready, and so the work is visible if it ever is deployed.
 | --- | --- | --- |
 | F-7.1 | A user can upload an avatar image on their profile | **Met** |
 | F-7.2 | A post can carry one or more images | **Met** |
-| F-7.3 | Uploaded images are processed (resized, converted to a web-friendly format) for fast loading | **Met** — resized to fit 600×600 and converted to WebP by libvips. The production image lacked libvips until v0.8.4; the smoke test now exercises a variant so the gap cannot reopen silently |
-| F-7.4 | Image metadata (EXIF, etc.) is stripped on upload | **Met** |
+| F-7.3 | Uploaded images are processed (resized, converted to a web-friendly format) for fast loading | **Met** — resized to fit 600×600 and converted to WebP by libvips. The production image lacked libvips until v0.8.4; the smoke test exercises a variant so the gap cannot reopen silently. Since [#100](https://github.com/GauranshMathur/JDSG-Group6-app/pull/100) a spec **processes** an image and reads the format back — the previous evidence was `expect(variant).to be_present`, which is true of any variant that has not been built |
+| F-7.4 | Image metadata (EXIF, etc.) is stripped **on render, not on upload** | **Met as reworded.** Every variant the app renders is stripped, proven by a spec that generates a fixture carrying camera tags and finds none in the output ([#100](https://github.com/GauranshMathur/JDSG-Group6-app/pull/100); removing `strip: true` makes it fail with 13 surviving fields). **The original blob keeps its metadata** and stays reachable by its own Active Storage route, so the old wording — "on upload" — was never true. Stripping the original too is deferred by proof-of-concept scope: see N-7.6 |
 | F-7.5 | Posts reference images via metadata, not inline binary — images load asynchronously | **Met** |
 
 ### 1.8 Stress and telemetry (milestone 8)
@@ -242,6 +242,7 @@ Real answers are needed only if this is ever deployed.
 | N-5.4 | Sessions expire after a period of inactivity | Deferred |
 | N-5.5 | The app is backed up, and restores are tested | Deferred — SQLite in a container volume, no backups |
 | N-5.6 | Deleting an account erases the personal data it held | Deferred — ADR 0005 keeps the user row forever so a released identity can never be reclaimed, which means the email address is retained. Squaring erasure with that means storing a fingerprint of the address rather than the address |
+| N-7.6 | The **original** uploaded image is stripped of metadata, not only the rendered variant | Deferred — stripping happens when a variant is built, so the original blob keeps its EXIF and is reachable by its own Active Storage route. Nothing here holds a real photograph, so the present exposure is nil; the fix is to process on upload rather than on render, and it is real work — it changes what is stored, so it needs a backfill for anything already uploaded. Recorded when finding 7 was fixed rather than left implied by F-7.4's old wording |
 
 ---
 

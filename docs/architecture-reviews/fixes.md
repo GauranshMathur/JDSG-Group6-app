@@ -287,3 +287,52 @@ is guarded by:
 
 That last row is why F-6.3 now says met *and* names what is still unproven. Simulating an
 adapter is not the same as running against it, and the fix does not pretend otherwise.
+
+---
+
+## Finding 7 — the image policy lived in a view, and the model's copy was dead
+
+**Pull request:** [#100](https://github.com/GauranshMathur/JDSG-Group6-app/pull/100) ·
+**Issue:** [#89](https://github.com/GauranshMathur/JDSG-Group6-app/issues/89)
+
+**What was wrong.** `Post#image_variants` defined the WebP conversion and the EXIF
+stripping, and its only caller was its own spec — `_post.html.erb` re-inlined the identical
+variant specification instead. So a privacy rule was implemented in a template, and the
+method meant to own it was kept alive by its test. `User` did the same thing correctly eight
+files away. The accepted content types were written four times: two model constants and two
+hardcoded `accept:` attributes.
+
+**What replaced it.** An `ImagePolicy` module holding the three things that are policy
+rather than presentation: the accepted content types, the same list in the form a file
+input wants, and the transformation applied to every rendered variant. Both models and both
+file inputs read it, and the post partial calls `post.image_variants` like the avatar
+partial already called `avatar_thumbnail`.
+
+**The evidence was the worse half.** F-7.3 and F-7.4 were recorded as met on
+`expect(variant).to be_present` — true of any variant that has not been built — and
+`expect(user).to respond_to(:avatar_thumbnail)`. Neither processed an image. The new specs
+generate a JPEG carrying real camera tags, process the variant, and read the output: the
+format is WebP and no `exif-*` field survives.
+
+Those specs were green the moment they were written, which by this repository's own rule
+proves nothing — so they were checked by mutation. Removing `strip: true` makes the EXIF
+example fail with 13 surviving fields; that is what makes it a guard rather than a
+decoration.
+
+**What it cost, and it is not nothing.** Stripping happens when a *variant* is built, so
+**the original blob keeps its metadata** and stays reachable by its own Active Storage
+route. F-7.4 was worded "stripped on upload" and that was never true. The requirement is
+reworded to say what actually happens, and the gap is now
+**N-7.6** in the deferred table rather than implied by a sentence nobody re-read. Fixing it
+properly means processing on upload, which changes what is stored and needs a backfill —
+real work, deliberately not smuggled into this pull request.
+
+**Measured.** Nothing to time; this is structure and evidence.
+
+| | Before | After |
+| --- | --- | --- |
+| Places deciding accepted content types | **4** | 1 |
+| Places defining the render transformation | 3 (two models, one template) | 1 |
+| Callers of `Post#image_variants` | its own spec | the view |
+| Specs that process an image | **0** | 5 |
+| Requirements claiming more than is true | F-7.4 | none |
