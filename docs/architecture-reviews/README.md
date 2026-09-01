@@ -32,23 +32,31 @@ without anyone having to check what the last one was.
 Carried across reviews until each is closed. A finding closes by being fixed, or by an ADR
 recording why it will not be.
 
-| # | Finding | Review | Strength | Status |
-| --- | --- | --- | --- | --- |
-| 1 | "Load a post for rendering" has no module — 42 queries/page on tag and search | [2026-08-18](2026-08-18.md) | Strong | **Closed** — [#92](https://github.com/GauranshMathur/JDSG-Group6-app/pull/92), `Post.for_rendering`. 42 queries → 4; what it bought is in [`fixes.md`](fixes.md) |
-| 2 | `Post.search` depends on the adapter; F-6.3 claims parity | [2026-08-18](2026-08-18.md) | Strong | Open |
-| 3 | `Rails.cache` has no seam — rate limiter inert under test | [2026-08-18](2026-08-18.md) | Strong | Open |
-| 4 | Nothing owns "a page of a timeline" — `?page=-1` is a 500 on two routes | [2026-08-18](2026-08-18.md) | Strong | Open |
-| 5 | `ProfileFeed` materialises the whole archive to serve twenty rows | [2026-08-18](2026-08-18.md) | Strong | Open |
-| 6 | Invalidation does not know the window; edits never bust the cache | [2026-08-18](2026-08-18.md) | Strong | Open |
-| 7 | Image policy lives in a view; `Post#image_variants` is dead | [2026-08-18](2026-08-18.md) | Strong | Open |
-| 8 | Like and Repost are one module written twice | [2026-08-18](2026-08-18.md) | Worth exploring | Open |
-| 9 | One rule, several implementations — tags, usernames, the ranking formula | [2026-08-18](2026-08-18.md) | Worth exploring | Open |
+| # | Finding | Review | Strength | Issue | Status |
+| --- | --- | --- | --- | --- | --- |
+| 1 | "Load a post for rendering" has no module — 42 queries/page on tag and search | [2026-08-18](2026-08-18.md) | Strong | [#83](https://github.com/GauranshMathur/JDSG-Group6-app/issues/83) | **Closed** — [#92](https://github.com/GauranshMathur/JDSG-Group6-app/pull/92) |
+| 2 | `Post.search` depends on the adapter; F-6.3 claims parity | [2026-08-18](2026-08-18.md) | Strong | [#84](https://github.com/GauranshMathur/JDSG-Group6-app/issues/84) | Open |
+| 3 | `Rails.cache` has no seam — rate limiter inert under test | [2026-08-18](2026-08-18.md) | Strong | [#85](https://github.com/GauranshMathur/JDSG-Group6-app/issues/85) | Open |
+| 4 | Nothing owns "a page of a timeline" — `?page=-1` is a 500 on two routes | [2026-08-18](2026-08-18.md) | Strong | [#86](https://github.com/GauranshMathur/JDSG-Group6-app/issues/86) | Open |
+| 5 | `ProfileFeed` materialises the whole archive to serve twenty rows | [2026-08-18](2026-08-18.md) | Strong | [#87](https://github.com/GauranshMathur/JDSG-Group6-app/issues/87) | Open |
+| 6 | Invalidation does not know the window; edits never bust the cache | [2026-08-18](2026-08-18.md) | Strong | [#88](https://github.com/GauranshMathur/JDSG-Group6-app/issues/88) | Open |
+| 7 | Image policy lives in a view; `Post#image_variants` is dead | [2026-08-18](2026-08-18.md) | Strong | [#89](https://github.com/GauranshMathur/JDSG-Group6-app/issues/89) | Open |
+| 8 | Like and Repost are one module written twice | [2026-08-18](2026-08-18.md) | Worth exploring | [#90](https://github.com/GauranshMathur/JDSG-Group6-app/issues/90) | Open |
+| 9 | One rule, several implementations — tags, usernames, the ranking formula | [2026-08-18](2026-08-18.md) | Worth exploring | [#90](https://github.com/GauranshMathur/JDSG-Group6-app/issues/90) | Open |
 
-When a finding is closed, mark it here with what closed it — a pull request, or the ADR
-that refused it. A finding silently disappearing from this table is the failure mode this
-table exists to prevent. What each fix actually changed, with its before/after numbers and
-what they were measured on, goes in [`fixes.md`](fixes.md) — this table stays a status
-column rather than growing into a changelog.
+Findings 8 and 9 share an issue: both are one concept expressed more than once, both are small,
+and splitting them would have produced two tickets nobody picks up rather than one.
+
+**The table is the record; the issue is the queue.** A finding stays here whatever happens to its
+issue, because an issue closed as \"not doing this\" is still a thing that was found. When a finding
+is closed, mark it here with what closed it — a pull request, or the ADR that refused it. A finding
+silently disappearing from this table is the failure mode this table exists to prevent.
+What each fix actually changed, with its before/after numbers and the rig they were measured
+on, goes in [`fixes.md`](fixes.md) — this column stays a status rather than growing into a
+changelog.
+
+Findings 1–6 also have load-side guards ahead of their fixes, in the `review` k6 profile — see
+[`docs/stress-testing.md`](../stress-testing.md) for what each one measures today.
 
 Findings 1–6 have load-side guards ahead of their fixes: the `review` k6 profile
 (`web/script/stress/review.js`, run as `script/stress-test review`) exercises each one over

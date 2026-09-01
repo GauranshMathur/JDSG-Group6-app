@@ -7,7 +7,7 @@ of them, and `release.yml` ships after merge.
 
 | Workflow | Trigger | What it does |
 | --- | --- | --- |
-| `ci.yml` | Pull requests touching `web/**`, `.github/**` or `sonar-project.properties` | Workflow lint, release-tooling tests, RuboCop, RSpec, container build + image scan + DAST, SonarQube |
+| `ci.yml` | Pull requests, and merges to `main`, touching `web/**`, `.github/**` or `sonar-project.properties` | Workflow lint, release-tooling tests, RuboCop, RSpec, container build + image scan + DAST (pull requests only), SonarQube |
 | `security.yml` | **Every** pull request | Brakeman, bundler-audit, Trivy filesystem scan |
 | `release.yml` | After merge to `main` | Derives the version, builds and publishes the image, tags and releases |
 
@@ -73,7 +73,7 @@ once these pass. Jobs run in parallel:
 | **Test** | RSpec on SQLite | any failure |
 | **SAST** | Brakeman, bundler-audit, Trivy filesystem scan | any Brakeman warning, any gem CVE, any fixable HIGH/CRITICAL |
 | **Container** | Builds the image, Trivy image scan, boots it, OWASP ZAP baseline scan | any fixable HIGH/CRITICAL in the image, or the container failing to serve `/up` |
-| **SonarQube** | Quality gate | quality gate failure — skipped while unconfigured |
+| **SonarQube** | Bugs, vulnerabilities, smells, duplication and coverage, published to SonarQube Cloud | nothing yet — the scan reports, the quality gate does not block. See [SonarQube](#sonarqube) |
 
 On the security gates:
 
@@ -179,12 +179,68 @@ Two details make it an exception rather than a hole:
   remedy is deleting the line and bumping the dependency it names. Nobody has to
   remember to go and look.
 
-## Configuring SonarQube
+## SonarQube
 
-The SonarQube job checks for a `SONAR_TOKEN` secret and skips the scan when it is absent, so
-it does not block pull requests before the server exists. Add `SONAR_TOKEN` (and
-`SONAR_HOST_URL` for a self-hosted server) to repository secrets to turn it on. Project
-settings live in `sonar-project.properties`.
+The target is **SonarQube Cloud** (`https://sonarcloud.io`), organization `gauranshmathur`,
+project `GauranshMathur_JDSG-Group6-app`. Settings live in `sonar-project.properties`; the
+scan runs in `ci.yml`'s `sonarqube` job, authenticated by the `SONAR_TOKEN` repository
+secret.
+
+**It reported a green check for weeks without ever scanning anything.** Three things were
+wrong at once, and the first hid the other two:
+
+1. The job skipped itself unless `SONAR_TOKEN` was set, and printed a notice nobody reads.
+   A scan that quietly does nothing is indistinguishable, on the pull request, from one
+   that passed. **The guard is gone**: a missing token now fails the job.
+2. `sonar.projectKey` was hand-written (`jdsg-group6-twitter-clone`) and there was no
+   `sonar.organization` at all. Both keys are assigned by SonarQube Cloud at import and are
+   not free-form, so the scan would have failed on its first real run. Read them back from
+   the API rather than retyping them:
+   `curl -s "https://sonarcloud.io/api/components/show?component=GauranshMathur_JDSG-Group6-app"`
+3. `SONAR_HOST_URL` was read from a secret that was never created. It is now a literal in
+   the workflow — it is the same public endpoint for every project, so keeping it in a
+   secret bought nothing and is exactly how it ended up unset.
+
+**Automatic Analysis must stay off.** SonarQube Cloud offers a zero-configuration analysis
+that runs on its own servers on every push, and it is enabled by default when a repository
+is imported — it is what produced this project's first analysis. It is **mutually exclusive
+with CI-based analysis**: with both on, the CI scan fails with *"You are running CI analysis
+while Automatic Analysis is enabled."* CI analysis is the one worth keeping, because it is
+the only one that can import coverage. The toggle is
+*Administration → Analysis Method → Automatic Analysis*, and its state is readable without
+logging in:
+
+```bash
+curl -s "https://sonarcloud.io/api/settings/values?component=GauranshMathur_JDSG-Group6-app" \
+  | grep -o 'sonar.autoscan.enabled[^}]*'
+```
+
+**`main` is analysed too, which is why `ci.yml` now has a `push` trigger.** A pull request
+analysis is measured against the target branch's analysis; with nothing ever analysing
+`main`, there is no baseline to measure against and the dashboard freezes at whatever ran
+last. Automatic Analysis used to cover this, and turning it off removed it — a hole worth
+naming, because it opens silently and every check stays green while it does. The container
+build, image scan and DAST stay pull-request-only: `release.yml` builds and publishes the
+same image on merge, so running them again would spend five minutes twice on one commit.
+
+**What Sonar looks at, and what it does not.** `sonar.sources` is `web/app`, `web/lib` and
+`web/config` — application code, including the ERB templates. Workflow files, the Dockerfile
+and the Compose files are deliberately outside it: Trivy's config scan and `actionlint`
+already cover those, and they cover them on *every* pull request rather than only the ones
+touching `web/**`. The division is that Sonar reads the application and the security
+workflow reads the plumbing.
+
+**Coverage comes from the suite, not from a second run.** `spec/spec_helper.rb` starts
+SimpleCov before anything else loads and writes `web/coverage/coverage.json`; the Test job
+uploads it as an artifact and the SonarQube job downloads it. SimpleCov JSON is the only
+coverage format Sonar's Ruby analyser reads — **it does not accept LCOV**, which is the
+obvious wrong turn to take here. The paths inside the report are absolute, which works only
+because every job in a workflow checks out to the same path on the runner.
+
+**The quality gate reports; it does not yet block.** The scan publishes to the dashboard and
+the job passes regardless of the gate's verdict. Making the gate blocking is a separate
+decision, and a fair one to take once there is a clean baseline to hold the line at —
+`-Dsonar.qualitygate.wait=true` is the switch.
 
 ## Versioning and releases
 
