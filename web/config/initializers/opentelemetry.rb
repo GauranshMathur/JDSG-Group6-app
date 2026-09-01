@@ -27,6 +27,12 @@ ENV["OTEL_TRACES_EXPORTER"] ||= "none"
 tracing_requested = ENV["OTEL_TRACES_EXPORTER"] != "none"
 
 if tracing_requested || Rails.env.test?
+  # These requires stay here rather than at the top of the file, and Sonar's
+  # rubydre:S7816 is right that this is unusual — it is also the whole point of
+  # ADR 0009. Loading the SDK is what starts it; requiring it unconditionally
+  # would mean every rails command paid for instrumentation nobody asked for,
+  # which is a behaviour change rather than a tidy-up. The rule is refused here
+  # deliberately, with the reason in the file rather than only on a dashboard.
   require "opentelemetry/sdk"
   require "opentelemetry/instrumentation/rails"
 

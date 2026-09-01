@@ -34,9 +34,20 @@ begin
 rescue ActiveRecord::PendingMigrationError => e
   abort e.to_s.strip
 end
+# Support files are required after the Rails environment, not at the top of
+# the file, because they reference application constants and RSpec config.
+# Also refusing rubydre:S7816, for a different reason than the initializer:
+# this is a glob, so there is no static require to hoist.
 Rails.root.glob('spec/support/**/*.rb').sort.each { |file| require file }
 
 RSpec.configure do |config|
+  # The cache is real in test (see config/environments/test.rb) so that rate
+  # limiting and the ranked feed's caching are reachable. It is process-wide,
+  # so it is emptied before every example: the alternative is an order-dependent
+  # suite, and five spec files each swapping the store by hand in an around
+  # hook, which is what this replaces.
+  config.before { Rails.cache.clear }
+
   # Remove this line if you're not using ActiveRecord or ActiveRecord fixtures
   config.fixture_paths = [
     Rails.root.join('spec/fixtures')

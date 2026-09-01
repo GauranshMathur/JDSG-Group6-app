@@ -390,6 +390,48 @@ real work, deliberately not smuggled into this pull request.
 
 ---
 
+## Finding 3, first half — the rate limiter was inert under test
+
+**Pull request:** [#103](https://github.com/GauranshMathur/JDSG-Group6-app/pull/103) ·
+**Issue:** [#85](https://github.com/GauranshMathur/JDSG-Group6-app/issues/85)
+
+**What was wrong.** `config/environments/test.rb` set `:null_store`. `rate_limit` counts
+through `Rails.cache`. Three limits were declared — sign-in, registration, password reset —
+and `grep` found **zero** specs that reached one, because a null store throws the count
+away. The brute-force protection was real in production and, as tested, indistinguishable
+from three comments.
+
+The same missing seam had a second effect: five spec files each carried an identical
+six-line `around` hook swapping `Rails.cache` for a memory store by hand, because the only
+way to test caching was to replace a process-wide global.
+
+**What replaced it.** The test environment uses a real memory store, cleared before every
+example in one place. That is the whole fix for both symptoms: the limiters count, and the
+five hand-rolled hooks are unnecessary.
+
+**What it cost.** A process-wide store that persists between examples is exactly how a
+suite becomes order-dependent, so the clear is not optional — it is the price of having a
+real store, and it is written down next to the store rather than left to be rediscovered.
+
+**Measured.**
+
+| | Before | After |
+| --- | --- | --- |
+| Specs that reach a rate limiter | **0** | **4** |
+| Duplicated cache hooks in specs | **5** | **0** |
+| Suite | 380 examples | 384, all green |
+
+Proven over HTTP as well as in specs: twelve sign-in attempts against a running server, and
+the responses carry "Try again later." once the limit is reached — the same check the `review`
+k6 profile makes, now reachable without k6.
+
+**What is still open.** The other half of finding 3 — `RankedFeed`'s internals being its
+effective interface, with four spec files depending on `CACHE_KEY`, the `{cutoff:, entries:}`
+payload and the lock protocol — is untouched. Hiding that shape means giving `RankedFeed`
+query methods and rewriting those specs, and the review itself notes it bears on
+[ADR 0010](../adr/0010-stored-rank-score.md)'s open question of whether `RankedFeed`
+survives as a class. That is a design decision, not a tidy-up, so it stays open rather than
+being guessed at here.
 ## Finding 9 — one rule, several implementations
 
 **Pull request:** [#104](https://github.com/GauranshMathur/JDSG-Group6-app/pull/104) ·

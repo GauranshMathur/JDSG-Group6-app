@@ -115,6 +115,11 @@ Do not introduce a new framework, database, job runner, or test library without 
 - Add database indexes for foreign keys and any column used for timeline ordering.
 - Use strong parameters, and scope queries through associations rather than
   `Model.find(params[:id])` on user-owned records.
+- **A render-only action has no method.** Rails renders the matching template
+  whether or not the action is defined, so `def new; end` is inert. The route,
+  and the `only:` list of any filter that applies to it, already declare that
+  the action exists. Four such methods were deleted on 2026-09-01 (issue #79);
+  do not reintroduce them, and do not read their absence as an oversight.
 
 **Views**
 
