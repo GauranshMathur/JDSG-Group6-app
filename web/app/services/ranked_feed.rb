@@ -39,6 +39,33 @@ class RankedFeed
     new.send(:rebuild_and_store, claimed: false)
   end
 
+  def self.window_cutoff
+    WINDOW.ago
+  end
+
+  # The window predicate, asked about one row — the interface finding 6 says
+  # both sides should share. compute_ordering reads exactly two sets: top-level
+  # posts created inside the window, and reposts made inside it. So a post is in
+  # the ordering when it is top-level and either recent enough itself, or
+  # carried in by a recent repost. Anything else cannot be moved by any write,
+  # and busting for it forces a rebuild that returns a byte-identical result.
+  #
+  # Cheap in the common case: a post at the top of the feed is recent, so the
+  # comparison short-circuits without a query. Only an archived post pays the
+  # EXISTS, and it pays it instead of everyone paying for a rebuild.
+  def self.ranks?(post)
+    return false if post.nil? || post.parent_id.present?
+    return true if post.created_at >= window_cutoff
+
+    post.reposts.where(created_at: window_cutoff..).exists?
+  end
+
+  # A repost is its own entry, dated by the repost rather than the post, so an
+  # in-window repost is in the ordering whatever the age of what it points at.
+  def self.ranks_repost?(repost)
+    repost.created_at >= window_cutoff && repost.post&.parent_id.nil?
+  end
+
   def self.bust_cache
     # Worth a span of its own: every like, repost, reply and post lands here,
     # so the rate of invalidation is what decides how often a reader pays for a
