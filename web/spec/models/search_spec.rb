@@ -71,3 +71,14 @@ RSpec.describe "Search scopes" do
     end
   end
 end
+
+# The username-underscore case, which User.search also got wrong for the same
+# reason: escaped wildcards need an ESCAPE clause to mean anything.
+RSpec.describe "User.search wildcards" do
+  it "treats an underscore in the query as a literal character" do
+    literal = create(:user, username: "ada_l")
+    create(:user, username: "adaxl")
+
+    expect(User.search("ada_l")).to contain_exactly(literal)
+  end
+end

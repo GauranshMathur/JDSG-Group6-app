@@ -82,3 +82,52 @@ milliseconds *each*. The guard that keeps it fixed is a query-count spec, not a 
 **Guard.** `spec/requests/timeline_query_budget_spec.rb` — tag and search must cost the
 same number of queries at twenty rows as at one. It is the tag/search equivalent of the
 feed and profile budgets that already existed, which is the reason this was found at all.
+
+---
+
+## Finding 2 — `Post.search` depended on the adapter
+
+**Pull request:** [#97](https://github.com/GauranshMathur/JDSG-Group6-app/pull/97) ·
+**Issue:** [#84](https://github.com/GauranshMathur/JDSG-Group6-app/issues/84)
+
+**What was wrong.** `User.search` folded case on both sides — the query by `downcase`, the
+column by the normalisation on write. `Post.search` folded neither, and post bodies are
+stored verbatim, so it matched only because SQLite's `LIKE` ignores ASCII case.
+PostgreSQL's does not. Three documents recorded parity that did not exist: F-6.3 as met,
+[ADR 0004](../adr/0004-hashtags-and-search.md) in its opening claim, and `CLAUDE.md`'s rule
+against adapter-specific behaviour.
+
+**How it was made visible.** This is the interesting part of the finding: the defect cannot
+be seen on the adapter we run, so a case-insensitivity example passes whether or not the bug
+is present — the existing `search_spec.rb:18` did exactly that. `PRAGMA
+case_sensitive_like = ON` makes SQLite compare the way PostgreSQL will, and under it the
+specs fail before the fix and pass after. The switch is no longer the thing that discovers
+this.
+
+**What replaced it.** Both scopes fold case in SQL and name an ESCAPE character.
+
+**A second defect the specs found on the way.** `sanitize_sql_like` escapes `%` and `_`
+with a backslash, but SQLite gives `LIKE` no default escape character — so the backslash was
+matched literally and **searching for "100%" found nothing at all**. PostgreSQL happens to
+default to backslash, so this was the mirror image of the case bug: a search that worked
+there and not here. Both scopes now name the escape explicitly, which is the only spelling
+that means the same thing on both.
+
+**What it cost.** `LOWER(posts.body)` cannot use an index on `body` — but nothing could:
+a `LIKE '%term%'` with a leading wildcard never uses one, which is the cost ADR 0004
+already accepted. Case folding is ASCII-only, because that is what both databases' `LOWER`
+does without a collation; a Turkish dotted capital still will not match its lowercase form,
+recorded rather than implied.
+
+**Measured.** Nothing to time — this is a correctness fix, and the honest report is what it
+is guarded by:
+
+| | Before | After |
+| --- | --- | --- |
+| Specs for either search scope | **none** | 8 |
+| `Post.search` under PostgreSQL-like comparison | 4 failing | passing |
+| Searching for a literal `%` or `_` | finds nothing | finds the post |
+| Proven against a real PostgreSQL | no | **still no** — no CI job runs one |
+
+That last row is why F-6.3 now says met *and* names what is still unproven. Simulating an
+adapter is not the same as running against it, and the fix does not pretend otherwise.
