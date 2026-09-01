@@ -68,6 +68,17 @@ export const options = {
     review_profile_page: ["p(95)<500"],
     review_feed_reply_churn: ["p(95)<1000"],
     review_feed_archive_churn: ["p(95)<1000"],
+
+    // The two that make a broken run fail, rather than merely look wrong in
+    // the summary. Found by accident: a run in which 31% of requests returned
+    // 500 still exited zero, because review_server_errors is only incremented
+    // inside the hostile scenario — a 500 anywhere else was invisible to the
+    // exit code, and a profile that cannot fail is not a guard.
+    //
+    // The deliberate rate-limit refusals do not trip these: they redirect and
+    // the redirect is followed to a 200.
+    checks: ["rate>0.99"],
+    http_req_failed: ["rate<0.01"],
   },
 
   scenarios: {
