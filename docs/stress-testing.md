@@ -911,3 +911,9 @@ Reading it:
 The profile signs in twice and then deliberately trips the sign-in limiter as its final
 scenario, so leave ~3 minutes before running any signing profile (smoke, load,
 scenarios) afterwards.
+
+**Where the after-numbers live.** Each fix is measured by re-running this profile against
+the same seed snapshot and recorded in
+[`architecture-reviews/fixes.md`](architecture-reviews/fixes.md), next to what changed and
+what it cost. The table above stays the pre-fix baseline — it is the before column, and
+rewriting it in place would delete the comparison it exists to make.

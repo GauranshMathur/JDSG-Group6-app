@@ -217,8 +217,7 @@ class RankedFeed
     return [] if entries.empty?
 
     posts = Post.where(id: entries.map(&:first))
-                .eager_load(:user)
-                .includes(user: { avatar_attachment: :blob }, images_attachments: :blob)
+                .for_rendering
                 .index_by(&:id)
 
     reposter_ids = entries.filter_map(&:last)

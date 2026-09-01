@@ -10,7 +10,7 @@ class RepliesController < ApplicationController
       end
     else
       @post = @parent
-      @replies = @parent.replies.eager_load(:user).order(created_at: :asc, id: :asc)
+      @replies = @parent.replies.for_rendering.order(created_at: :asc, id: :asc)
       render "posts/show", status: :unprocessable_content
     end
   end
