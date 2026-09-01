@@ -8,7 +8,7 @@ import { Controller } from "@hotwired/stimulus"
 // <html> alone, so the choice survives navigation without being re-applied.
 const KEY = "sidebar-collapsed"
 
-export default class extends Controller {
+export default class SidebarController extends Controller {
   static targets = ["toggle"]
 
   connect() {

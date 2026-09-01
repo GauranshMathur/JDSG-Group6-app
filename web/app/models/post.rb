@@ -125,12 +125,9 @@ class Post < ApplicationRecord
   private
 
   def images_content_type_allowed
-    images.each do |img|
-      unless IMAGE_CONTENT_TYPES.include?(img.blob.content_type)
-        errors.add(:images, "must be PNG, JPEG, WebP or GIF images")
-        break
-      end
-    end
+    return if images.all? { |img| IMAGE_CONTENT_TYPES.include?(img.blob.content_type) }
+
+    errors.add(:images, "must be PNG, JPEG, WebP or GIF images")
   end
 
   def images_count_within_limit

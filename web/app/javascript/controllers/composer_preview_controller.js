@@ -1,6 +1,6 @@
 import { Controller } from "@hotwired/stimulus"
 
-export default class extends Controller {
+export default class ComposerPreviewController extends Controller {
   static targets = ["container"]
 
   preview(event) {
