@@ -36,9 +36,12 @@
 
 require "benchmark"
 
-# The ranking, as RankedFeed#score computes it.
+# The ranking, from the one place that defines it. This script does not boot
+# Rails, which is why it used to carry its own copy bound only by a comment.
+require_relative "../app/services/ranking"
+
 def entry_score(likes, reposts, replies, age_hours)
-  (likes + (reposts * 2) + replies + 1).to_f / ((age_hours + 2)**1.5)
+  Ranking.score(likes: likes, reposts: reposts, replies: replies, age_hours: age_hours)
 end
 
 # The re-shaped 10k seed puts 2,348 posts and 11,407 reposts inside the

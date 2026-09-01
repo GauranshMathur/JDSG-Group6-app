@@ -227,10 +227,11 @@ class RankedFeed
     scored.map { |_score, post_id, reposter_id| [ post_id, reposter_id ] }
   end
 
+  # The formula itself lives in Ranking, because script/scaling-curve needs it
+  # without booting Rails and used to hold its own copy (finding 9).
   def score(likes, reposts, replies, at, now)
-    age_hours = ((now - at) / 1.hour).clamp(0, Float::INFINITY)
-    engagement = likes + (reposts * 2) + replies
-    (engagement + 1).to_f / ((age_hours + 2)**1.5)
+    Ranking.score(likes: likes, reposts: reposts, replies: replies,
+                  age_hours: Ranking.age_hours(at, now))
   end
 
   # Two queries, whatever the page: the posts it shows, and the accounts that

@@ -25,7 +25,7 @@ Rails.application.routes.draw do
   # Public profiles. The @ is literal — /@ada — so a profile URL reads the way
   # the handle is written everywhere else.
   get "@:username", to: "profiles#show", as: :profile,
-      constraints: { username: /[A-Za-z0-9_]+/ }
+      constraints: { username: User::USERNAME_ROUTE_CONSTRAINT }
 
   # Editing your own profile. Singular and id-less on purpose: the resource is
   # whoever is signed in, so a route to anyone else's profile settings does not
