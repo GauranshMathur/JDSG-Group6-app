@@ -36,11 +36,8 @@
         uncropped-in-width, 2 side by side, 3-4 in a two-column collage. %>
     <% if post.images.attached? %>
       <div class="post__images post__images--<%= post.images.size %>">
-        <% post.images.each do |image| %>
-          <%= image_tag image.variant(resize_to_limit: Post::IMAGE_FEED_SIZE, format: :webp, saver: { strip: true }),
-                class: "post__image",
-                loading: "lazy",
-                alt: "" %>
+        <% post.image_variants.each do |variant| %>
+          <%= image_tag variant, class: "post__image", loading: "lazy", alt: "" %>
         <% end %>
       </div>
     <% end %>

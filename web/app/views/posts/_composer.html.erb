@@ -24,7 +24,7 @@
       <%= form.file_field :images,
             multiple: true,
             "aria-label": "Add images",
-            accept: "image/png,image/jpeg,image/webp,image/gif",
+            accept: ImagePolicy::ACCEPT,
             class: "composer__file",
             data: { action: "change->composer-preview#preview" } %>
     </label>

@@ -1,7 +1,6 @@
 class Post < ApplicationRecord
   MAX_BODY_LENGTH = 280
   MAX_IMAGES = 4
-  IMAGE_CONTENT_TYPES = %w[image/png image/jpeg image/webp image/gif].freeze
   IMAGE_FEED_SIZE = [ 600, 600 ].freeze
 
   belongs_to :user
@@ -133,7 +132,7 @@ class Post < ApplicationRecord
   end
 
   def image_variants
-    images.map { |img| img.variant(resize_to_limit: IMAGE_FEED_SIZE, format: :webp, saver: { strip: true }) }
+    images.map { |img| ImagePolicy.variant(img, resize_to_limit: IMAGE_FEED_SIZE) }
   end
 
   HASHTAG_REGEX = /#(\w+)/
@@ -141,7 +140,7 @@ class Post < ApplicationRecord
   private
 
   def images_content_type_allowed
-    return if images.all? { |img| IMAGE_CONTENT_TYPES.include?(img.blob.content_type) }
+    return if images.all? { |img| ImagePolicy::CONTENT_TYPES.include?(img.blob.content_type) }
 
     errors.add(:images, "must be PNG, JPEG, WebP or GIF images")
   end

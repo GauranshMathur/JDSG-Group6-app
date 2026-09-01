@@ -94,6 +94,18 @@ jobs:
           working-directory: web
           bundler-cache: true
 
+      # The image specs build a real variant, and the vips gem is only a binding
+      # to a shared library the runner does not ship. The production image has
+      # carried libvips since v0.8.4; the runner needs it too now that the suite
+      # proves WebP conversion and EXIF stripping instead of asserting that a
+      # method exists (F-7.3, F-7.4).
+      #
+      # libvips-tools rather than libvips42t64: the runtime package carries an
+      # ABI suffix that changes between releases, and depending on the tools
+      # package pulls whichever one this runner has.
+      - name: Install libvips
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libvips-tools
+
       # The suite runs on SQLite, matching development. No services required.
       - name: RSpec
         working-directory: web
