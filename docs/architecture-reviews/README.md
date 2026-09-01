@@ -34,7 +34,7 @@ recording why it will not be.
 
 | # | Finding | Review | Strength | Status |
 | --- | --- | --- | --- | --- |
-| 1 | "Load a post for rendering" has no module — 42 queries/page on tag and search | [2026-08-18](2026-08-18.md) | Strong | **Closed** — [#75](https://github.com/GauranshMathur/JDSG-Group6-app/pull/75), `Post.for_rendering`. 42 queries → 4; what it bought is in [`fixes.md`](fixes.md) |
+| 1 | "Load a post for rendering" has no module — 42 queries/page on tag and search | [2026-08-18](2026-08-18.md) | Strong | **Closed** — [#92](https://github.com/GauranshMathur/JDSG-Group6-app/pull/92), `Post.for_rendering`. 42 queries → 4; what it bought is in [`fixes.md`](fixes.md) |
 | 2 | `Post.search` depends on the adapter; F-6.3 claims parity | [2026-08-18](2026-08-18.md) | Strong | Open |
 | 3 | `Rails.cache` has no seam — rate limiter inert under test | [2026-08-18](2026-08-18.md) | Strong | Open |
 | 4 | Nothing owns "a page of a timeline" — `?page=-1` is a 500 on two routes | [2026-08-18](2026-08-18.md) | Strong | Open |

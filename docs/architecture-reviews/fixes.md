@@ -33,7 +33,7 @@ has to clear.
 
 ## Finding 1 — "load a post for rendering" had no module
 
-**Pull request:** [#75](https://github.com/GauranshMathur/JDSG-Group6-app/pull/75) ·
+**Pull request:** [#92](https://github.com/GauranshMathur/JDSG-Group6-app/pull/92) ·
 **Issue:** [#83](https://github.com/GauranshMathur/JDSG-Group6-app/issues/83)
 
 **What was wrong.** The chain `.includes(user: { avatar_attachment: :blob },
