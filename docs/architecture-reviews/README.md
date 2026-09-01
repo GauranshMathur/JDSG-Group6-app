@@ -38,7 +38,7 @@ recording why it will not be.
 | 2 | `Post.search` depends on the adapter; F-6.3 claims parity | [2026-08-18](2026-08-18.md) | Strong | [#84](https://github.com/GauranshMathur/JDSG-Group6-app/issues/84) | Open |
 | 3 | `Rails.cache` has no seam — rate limiter inert under test | [2026-08-18](2026-08-18.md) | Strong | [#85](https://github.com/GauranshMathur/JDSG-Group6-app/issues/85) | Open |
 | 4 | Nothing owns "a page of a timeline" — `?page=-1` is a 500 on two routes | [2026-08-18](2026-08-18.md) | Strong | [#86](https://github.com/GauranshMathur/JDSG-Group6-app/issues/86) | Open |
-| 5 | `ProfileFeed` materialises the whole archive to serve twenty rows | [2026-08-18](2026-08-18.md) | Strong | [#87](https://github.com/GauranshMathur/JDSG-Group6-app/issues/87) | Open |
+| 5 | `ProfileFeed` materialises the whole archive to serve twenty rows | [2026-08-18](2026-08-18.md) | Strong | [#87](https://github.com/GauranshMathur/JDSG-Group6-app/issues/87) | **Closed** — [#96](https://github.com/GauranshMathur/JDSG-Group6-app/pull/96). 63.5 ms → 4.5 ms; rows read now bounded by the page ([`fixes.md`](fixes.md)) |
 | 6 | Invalidation does not know the window; edits never bust the cache | [2026-08-18](2026-08-18.md) | Strong | [#88](https://github.com/GauranshMathur/JDSG-Group6-app/issues/88) | Open |
 | 7 | Image policy lives in a view; `Post#image_variants` is dead | [2026-08-18](2026-08-18.md) | Strong | [#89](https://github.com/GauranshMathur/JDSG-Group6-app/issues/89) | Open |
 | 8 | Like and Repost are one module written twice | [2026-08-18](2026-08-18.md) | Worth exploring | [#90](https://github.com/GauranshMathur/JDSG-Group6-app/issues/90) | Open |

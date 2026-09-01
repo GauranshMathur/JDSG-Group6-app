@@ -82,3 +82,60 @@ milliseconds *each*. The guard that keeps it fixed is a query-count spec, not a 
 **Guard.** `spec/requests/timeline_query_budget_spec.rb` — tag and search must cost the
 same number of queries at twenty rows as at one. It is the tag/search equivalent of the
 feed and profile budgets that already existed, which is the reason this was found at all.
+
+---
+
+## Finding 5 — `ProfileFeed` materialised the whole archive to serve twenty rows
+
+**Pull request:** [#96](https://github.com/GauranshMathur/JDSG-Group6-app/pull/96) ·
+**Issue:** [#87](https://github.com/GauranshMathur/JDSG-Group6-app/issues/87)
+
+**What was wrong.** Every post an account had ever written, plus every repost, loaded into
+Ruby and sorted, to return twenty rows. The same pathology N-6.8 removed from the ranked
+feed — recorded there at 763 ms — surviving untouched in the sibling service.
+
+**Why the guard beside it never noticed.** `profile_query_budget_spec.rb` asserts a
+constant *query count*, and the query count genuinely was constant: two queries at twenty
+posts and two at two hundred thousand. It measured the axis that was not growing. Rows read
+was the axis that was.
+
+**What replaced it.** The two chronological streams — what the account wrote, what it
+reposted — each ask for exactly the rows this page could contain, plus one. To take the top
+N of a merge of two sorted streams you only need the top N of each, so the page's cost
+tracks the page. The spare row answers "is there another page?" without a COUNT, the same
+trick the ranked archive uses. Identifiers are merged first and posts loaded second, so
+rows that lose the sort are never built into objects; the reposter needs no loading at all,
+because on a profile it is always the account whose profile it is.
+
+A profile needs no *window*, only a limit — it is chronological.
+[ADR 0011](../adr/0011-ranked-window.md)'s "profiles never had a window and still do not"
+is a statement about ranking and stays true.
+
+**What it cost.** Deep pages are still linear in the page number: page 50 asks each stream
+for 1,001 rows. That is the same shape as SQL `OFFSET` and is bounded by how far anyone
+actually scrolls, but it is not free, and a true keyset cursor over the merged stream would
+be. Not built, because nothing pages that deep today.
+
+**Measured.** The heaviest account in the 10k seed — @user834, 882 posts and 30 reposts —
+timed in-process over five runs, so the number is the service's own cost:
+
+| | Before | After |
+| --- | --- | --- |
+| Profile page 1 | 63.5 ms | **4.5 ms** |
+| Profile page 5 | 69.3 ms | **8.5 ms** |
+| Post rows read, 20-post account | 20 | 20 |
+| Post rows read, 100-post account | **100** | **20** |
+| Repost rows read, 83 reposts | **83** | 3 |
+
+The 63.5 ms agrees with the 63 ms already recorded for this account in
+[`stress-testing.md`](../stress-testing.md), which is a useful check that the rig and the
+old measurement agree.
+
+Over HTTP the profile page's median moved from 71–89 ms across earlier runs to **51 ms**.
+Smaller than 14×, and correctly so: the page also authenticates, preloads the viewer's
+likes and reposts, and renders twenty posts of ERB, none of which this touches.
+
+**Guard.** A new `RowCounter` helper and two examples in
+`profile_query_budget_spec.rb`, red first: 20 rows read for 20 posts and 100 for 100, and
+3 reposts read for 3 and 83 for 83. Both now constant. The helper exists because this
+finding is a lesson about guards — a budget that measures the wrong axis passes forever.
