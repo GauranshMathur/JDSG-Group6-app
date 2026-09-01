@@ -21,6 +21,19 @@ on:
       - ".github/**"
       - "sonar-project.properties"
 
+  # Merges too, for SonarQube's sake. A pull request analysis is measured
+  # against the main branch's, so if main is never analysed there is nothing to
+  # measure against and the dashboard freezes at whatever ran last. This used
+  # to be covered by SonarQube Cloud's Automatic Analysis, which is now off
+  # because it cannot coexist with a CI scan — see docs/ci-cd.md.
+  push:
+    branches:
+      - main
+    paths:
+      - "web/**"
+      - ".github/**"
+      - "sonar-project.properties"
+
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
@@ -88,10 +101,26 @@ jobs:
           RAILS_ENV: test
         run: bundle exec rspec --format documentation
 
+      # Consumed by the SonarQube job. Uploaded even when the suite fails, so
+      # a red run still reports the coverage it managed to record.
+      - name: Upload the coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: web/coverage/coverage.json
+          if-no-files-found: error
+          retention-days: 7
+
   container:
     name: Container build, image scan and DAST
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    # Pull requests only. On a merge, release.yml builds and publishes this
+    # image anyway, so running the five-minute build, scan and DAST here as
+    # well would spend it twice on the same commit. The merge still runs the
+    # cheap jobs, and SonarQube, which is what the push trigger is for.
+    if: github.event_name == 'pull_request'
     permissions:
       contents: read
       security-events: write
@@ -140,11 +169,15 @@ jobs:
       # this repository, so failing on it would teach everyone to ignore the
       # gate.
       #
-      # The ignore file lives at .github/trivyignore rather than the repository
-      # root on purpose: Trivy auto-loads a root .trivyignore into *every* scan,
-      # which would silently filter the SARIF report below as well. Naming it
-      # explicitly here suppresses the gate only — a suppressed finding still
-      # reaches code scanning. Suppressed from blocking, not from view.
+      # There are no suppressions. There were eight, all of them Go findings in
+      # the precompiled binary the thruster gem ships; thruster 0.1.26 rebuilt
+      # on a patched toolchain and cleared every one, so .github/trivyignore and
+      # the machinery that watched it are gone. If a suppression is ever needed
+      # again, bring both back together — the file named explicitly here (never
+      # a root .trivyignore, which Trivy would also apply to the SARIF report
+      # below, hiding the finding instead of merely not blocking on it), and a
+      # second unsuppressed scan that fails when an entry stops appearing. Git
+      # history at this commit has the shape.
       - name: Trivy image scan
         uses: aquasecurity/trivy-action@v0.36.0
         with:
@@ -152,43 +185,7 @@ jobs:
           image-ref: twitter-clone-web:${{ github.sha }}
           severity: CRITICAL,HIGH
           ignore-unfixed: true
-          trivyignores: .github/trivyignore
           exit-code: "1"
-
-      # A suppression is a debt, not a decision, and nothing here would ever
-      # have told us the debt could be paid. This re-runs the same scan with no
-      # ignore file and fails when a suppressed finding has stopped appearing —
-      # meaning the upstream fix landed and both the entry and the pin above it
-      # should go. It fails on good news deliberately: a warning gets scrolled
-      # past, and the remedy is deleting two lines.
-      - name: Trivy image scan (unsuppressed, to detect stale entries)
-        uses: aquasecurity/trivy-action@v0.36.0
-        with:
-          scan-type: image
-          image-ref: twitter-clone-web:${{ github.sha }}
-          severity: CRITICAL,HIGH
-          ignore-unfixed: true
-          format: json
-          output: trivy-unsuppressed.json
-          exit-code: "0"
-
-      - name: Fail when a suppressed finding has been fixed upstream
-        run: |
-          set -euo pipefail
-          present=$(jq -r '[.Results[]?.Vulnerabilities[]?.VulnerabilityID] | unique | .[]' trivy-unsuppressed.json)
-          stale=""
-          while read -r cve; do
-            printf '%s\n' "$present" | grep -qx "$cve" || stale="${stale}${cve} "
-          done < <(grep -oE '^CVE-[0-9]+-[0-9]+' .github/trivyignore)
-
-          if [ -n "$stale" ]; then
-            echo "::error::Fixed upstream — these suppressions are now stale: ${stale}"
-            echo "The finding no longer appears, so the exception is no longer earning its place."
-            echo "Remove those lines from .github/trivyignore, and bump the dependency they name."
-            echo "If the file ends up empty, delete it and the trivyignores: line in this workflow."
-            exit 1
-          fi
-          echo "Every suppressed finding is still present. The exception still earns its place."
 
       - name: Trivy image scan (report all severities)
         uses: aquasecurity/trivy-action@v0.36.0
@@ -270,10 +267,14 @@ jobs:
         if: always()
         run: docker rm -f web || true
 
+  # Needs the suite's coverage, so it waits for it. The coverage report is
+  # produced in the Test job and passed here as an artifact rather than by
+  # re-running RSpec: one suite run, two consumers.
   sonarqube:
     name: SonarQube
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    needs: test
     steps:
       - uses: actions/checkout@v4
         with:
@@ -281,25 +282,24 @@ jobs:
           # introduced them.
           fetch-depth: 0
 
-      # The scan is skipped rather than failed when the project has no SonarQube
-      # credentials yet, so this job does not block pull requests before the
-      # server is configured. Add SONAR_TOKEN (and SONAR_HOST_URL for a
-      # self-hosted server) to repository secrets to switch it on.
-      - name: Check for SonarQube credentials
-        id: sonar_check
-        env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-        run: |
-          if [ -n "$SONAR_TOKEN" ]; then
-            echo "configured=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "configured=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::SONAR_TOKEN is not set — skipping the SonarQube scan."
-          fi
+      # SimpleCov records absolute paths, and every job in a workflow checks
+      # out to the same /home/runner/work/<repo>/<repo>, so the paths written
+      # by the Test job resolve here. Restoring it anywhere else would leave
+      # Sonar unable to match coverage to files.
+      - name: Download the coverage report
+        uses: actions/download-artifact@v4
+        with:
+          name: coverage
+          path: web/coverage
 
+      # No credential guard here, deliberately. This job used to skip itself
+      # when SONAR_TOKEN was absent, which is why the project went unscanned
+      # for weeks behind a green check: a scan that quietly does nothing is
+      # indistinguishable from one that passed. A missing token now fails.
       - name: SonarQube scan
-        if: steps.sonar_check.outputs.configured == 'true'
         uses: SonarSource/sonarqube-scan-action@v8
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+          # SonarQube Cloud. Not a secret — it is the same public endpoint for
+          # every project, and keeping it in a secret is how it ended up unset.
+          SONAR_HOST_URL: https://sonarcloud.io
