@@ -155,29 +155,41 @@ runner, and paying the emulation cost on every pull request buys no extra signal
 **Image tagging:** every image carries an immutable `sha-<commit>` tag alongside the
 semantic version, so a deployment can always be pinned to an exact build.
 
-## Suppressed scan findings, and how they un-suppress themselves
+## Suppressed scan findings, and how they un-suppressed themselves
 
 The Trivy image scan fails on HIGH and CRITICAL findings that have a fix available.
-Some do not have one *we* can apply: a dependency ships a precompiled binary, an
-advisory lands against the toolchain it was built with, and no release of that
-dependency yet carries the rebuild. `ignore-unfixed` does not help, because the
-upstream language has shipped a patch even though the dependency has not.
+**There are no suppressions today**, and the story of the ones there were is the point
+of this section.
 
-Those go in [`.github/trivyignore`](../.github/trivyignore), one line per finding,
-each saying why it cannot be actioned here and what would let it be deleted. The bar
-is "no fix this repository can apply" — never "this is inconvenient".
+Some findings have no fix *this repository* can apply: a dependency ships a precompiled
+binary, an advisory lands against the toolchain it was built with, and no release of that
+dependency yet carries the rebuild. `ignore-unfixed` does not help, because the upstream
+language shipped a patch even though the dependency has not. Eight such findings — all
+Go advisories inside the binary the [thruster](https://github.com/basecamp/thruster) gem
+ships — lived in `.github/trivyignore`, one line each, saying why it could not be
+actioned here and what would let it be deleted. The bar was "no fix this repository can
+apply", never "this is inconvenient".
 
-Two details make it an exception rather than a hole:
+Two details made it an exception rather than a hole:
 
-- **The file is not at the repository root.** Trivy auto-loads a root `.trivyignore`
-  into every scan, which would filter the SARIF report as well as the gate. Naming it
-  explicitly on the gating step suppresses blocking only; every suppressed finding
-  still reaches GitHub code scanning.
-- **A later step re-runs the same scan with no ignore file and fails when a
-  suppressed finding stops appearing.** That absence is the upstream fix arriving.
-  The build failing on good news is deliberate — a warning is scrolled past, and the
-  remedy is deleting the line and bumping the dependency it names. Nobody has to
-  remember to go and look.
+- **The file was not at the repository root.** Trivy auto-loads a root `.trivyignore`
+  into every scan, which would have filtered the SARIF report as well as the gate. Naming
+  it explicitly on the gating step suppressed blocking only; every suppressed finding
+  still reached GitHub code scanning.
+- **A second step re-ran the same scan with no ignore file and failed when a suppressed
+  finding stopped appearing.** That absence is the upstream fix arriving. Failing the
+  build on good news is deliberate: a warning gets scrolled past, and the remedy is
+  deleting a line and bumping the dependency it names.
+
+**It worked, which is why the file is gone.** thruster 0.1.26 was rebuilt on a patched Go
+toolchain: measured against the binary each version ships, 0.1.25 carried nine fixable
+HIGH/CRITICAL findings and 0.1.26 carries none. Bumping the gem cleared all eight
+suppressions at once, so the file, the `trivyignores:` line and the stale-entry detector
+were deleted together.
+
+If a suppression is ever needed again, bring the whole shape back — the explicitly named
+file *and* the detector that watches it. A suppression with nothing watching it is how a
+temporary exception becomes permanent.
 
 ## SonarQube
 
