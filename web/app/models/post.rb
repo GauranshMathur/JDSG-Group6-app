@@ -150,7 +150,7 @@ class Post < ApplicationRecord
   end
 
   def sync_tags
-    parsed_names = body.scan(HASHTAG_REGEX).flatten.map(&:downcase).uniq
+    parsed_names = body.scan(HASHTAG_REGEX).flatten.map { |name| Tag.normalize(name) }.uniq
     current_tags = parsed_names.map { |name| Tag.find_or_create_by!(name: name) }
     self.tags = current_tags
   end

@@ -1,6 +1,23 @@
 class User < ApplicationRecord
   MINIMUM_PASSWORD_LENGTH = 8
-  USERNAME_FORMAT = /\A[a-z0-9_]{3,20}\z/
+  # What a username is, defined once and used twice. It was two regexes that
+  # disagreed on case and on length — the model's and the route's — with
+  # nothing saying whether the disagreement was intended (finding 9 of the
+  # 2026-08-18 review). It is intended, and now it is derived:
+  #
+  # The model decides what may be *stored*: lowercase, because usernames are
+  # normalised on write, and bounded in length.
+  #
+  # The route decides what may be *typed*, and is deliberately looser on both
+  # counts. It matches any case so that /@ADA reaches the controller, which
+  # downcases before looking up — a stricter route would 404 on a handle
+  # someone capitalised, which is worse than finding it. It is unanchored
+  # because Rails route constraints must be, and unbounded in length because a
+  # too-long name is a miss, not a routing error.
+  USERNAME_CHARACTERS = "a-z0-9_".freeze
+  USERNAME_LENGTH = 3..20
+  USERNAME_FORMAT = /\A[#{USERNAME_CHARACTERS}]{#{USERNAME_LENGTH.min},#{USERNAME_LENGTH.max}}\z/
+  USERNAME_ROUTE_CONSTRAINT = /[#{USERNAME_CHARACTERS}]+/i
   MAX_DISPLAY_NAME_LENGTH = 50
   MAX_BIO_LENGTH = 160
 

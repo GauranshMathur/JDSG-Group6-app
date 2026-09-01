@@ -432,3 +432,53 @@ query methods and rewriting those specs, and the review itself notes it bears on
 [ADR 0010](../adr/0010-stored-rank-score.md)'s open question of whether `RankedFeed`
 survives as a class. That is a design decision, not a tidy-up, so it stays open rather than
 being guessed at here.
+## Finding 9 — one rule, several implementations
+
+**Pull request:** [#104](https://github.com/GauranshMathur/JDSG-Group6-app/pull/104) ·
+**Issue:** [#90](https://github.com/GauranshMathur/JDSG-Group6-app/issues/90)
+
+Three rules, each written more than once, each needing a different answer.
+
+**Tags are lowercase — four copies, one of them different.** `Tag`, `Post#sync_tags`,
+`ApplicationHelper` and `TagsController` each downcased, and **only `Tag` also stripped
+whitespace**, so `"#Ruby "` reached three of them as a different string from the one the
+fourth stored. `Tag.normalize` is now the rule and the other three call it.
+
+**What a username is — two definitions that disagreed.** The model allowed
+`/\A[a-z0-9_]{3,20}\z/`; the route allowed `/[A-Za-z0-9_]+/`. Nothing said whether the
+disagreement was intended. **It is**: the model decides what may be *stored*, the route what
+may be *typed*, and the route is deliberately looser so `/@ADA` reaches the controller,
+which downcases before looking up — a stricter route would 404 on a handle someone
+capitalised, which is worse than finding it. Both are now derived from one character class
+and one length range, with that reasoning written where they are defined.
+
+**The ranking formula — two copies bound by a comment.** `RankedFeed#score` and
+`script/scaling-curve` each held the expression, joined only by the words "as
+RankedFeed#score computes it". A comment cannot fail. The formula moved to `Ranking`, a
+plain module with no Rails dependency — which is what lets the benchmark script require it
+directly, the reason the copy existed at all.
+
+**What it cost.** `config/routes.rb` now references a model constant, which means the routes
+file autoloads `User` at boot. That is supported and verified (`bin/rails routes` and a live
+`/@ada` both work), but it is a coupling the previous literal did not have. The alternative
+— a spec asserting the two regexes agree — would have left two definitions and a test
+holding them together, which is the shape this finding is about.
+
+**Measured.**
+
+| Rule | Before | After |
+| --- | --- | --- |
+| Tags are lowercase | 4 copies, 1 differing | 1 |
+| What a username is | 2 disagreeing definitions | 1 source, 2 derived |
+| The ranking formula | 2 copies, bound by a comment | 1 |
+| Specs guarding any of them | 0 | 9 |
+
+The guards were checked by mutation rather than trusted: dropping `strip`, removing digits
+from the username character class, and changing the decay exponent each failed an example.
+The suite went 380 → 389 examples.
+
+**Finding 8 is deliberately not done.** Like and Repost are one concept written twice, and
+the review's own judgement is that the duplication is stable and "worth doing when a third
+engagement type appears". Building a shared abstraction for two cases with no third in sight
+is exactly the scaffolding-ahead this repository forbids, so it stays open with that
+reasoning rather than being closed by a premature module.
