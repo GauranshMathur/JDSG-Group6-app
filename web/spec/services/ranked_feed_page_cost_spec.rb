@@ -15,14 +15,6 @@ require "rails_helper"
 # every functional spec while being the reason the app fell over at three
 # requests a second.
 RSpec.describe RankedFeed, type: :service do
-  around do |example|
-    original_store = Rails.cache
-    Rails.cache = ActiveSupport::Cache::MemoryStore.new
-    example.run
-  ensure
-    Rails.cache = original_store
-  end
-
   def records_instantiated_in
     counts = Hash.new(0)
     callback = ->(_name, _start, _finish, _id, payload) do

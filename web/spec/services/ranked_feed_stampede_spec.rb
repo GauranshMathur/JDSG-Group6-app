@@ -15,14 +15,6 @@ require "rails_helper"
 # cache already answers with a value up to CACHE_TTL old whenever nothing is
 # being written.
 RSpec.describe RankedFeed, type: :service do
-  around do |example|
-    original_store = Rails.cache
-    Rails.cache = ActiveSupport::Cache::MemoryStore.new
-    example.run
-  ensure
-    Rails.cache = original_store
-  end
-
   def cached_ordering
     Rails.cache.read(RankedFeed::CACHE_KEY)&.[](:entries)
   end

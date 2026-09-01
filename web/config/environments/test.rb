@@ -20,7 +20,15 @@ Rails.application.configure do
 
   # Show full error reports.
   config.consider_all_requests_local = true
-  config.cache_store = :null_store
+  # A real store, because :null_store made a security control untestable: the
+  # three rate limiters count through Rails.cache, and a null store throws the
+  # count away, so the brute-force protection was indistinguishable from three
+  # comments (finding 3 of the 2026-08-18 review).
+  #
+  # Memory, not the process-wide default, and cleared between examples in
+  # rails_helper — a store that persists across examples leaks state in exactly
+  # the way that makes suites flaky by order.
+  config.cache_store = :memory_store
 
   # Store uploaded files on the local file system in tmp/ (see config/storage.yml).
   config.active_storage.service = :test
