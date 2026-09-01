@@ -34,6 +34,10 @@ begin
 rescue ActiveRecord::PendingMigrationError => e
   abort e.to_s.strip
 end
+# Support files are required after the Rails environment, not at the top of
+# the file, because they reference application constants and RSpec config.
+# Also refusing rubydre:S7816, for a different reason than the initializer:
+# this is a glob, so there is no static require to hoist.
 Rails.root.glob('spec/support/**/*.rb').sort.each { |file| require file }
 
 RSpec.configure do |config|
