@@ -23,7 +23,9 @@ RSpec.describe "Accessible markup" do
 
       get posts_path
 
-      expect(response.body).to match(/<input[^>]*type="file"[^>]*aria-label="Add images"/)
+      file_input = response.body[/<input[^>]*type="file"[^>]*>/]
+
+      expect(file_input).to include('aria-label="Add images"')
     end
   end
 end
