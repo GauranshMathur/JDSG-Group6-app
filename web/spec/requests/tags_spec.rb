@@ -70,14 +70,14 @@ RSpec.describe "Tags" do
 
     it "paginates using the same cursor as the main feed" do
       tag_post = nil
-      (TimelinePagination::PAGE_SIZE + 1).times do |i|
+      (TimelinePage::PAGE_SIZE + 1).times do |i|
         tag_post = create(:post, body: "#rails post #{i}", created_at: i.minutes.ago)
       end
 
       get tag_path("rails")
 
-      expect(response.body.scan(/class="post"/).size).to eq(TimelinePagination::PAGE_SIZE)
-      expect(response.body).to include("Load older posts")
+      expect(response.body.scan(/class="post"/).size).to eq(TimelinePage::PAGE_SIZE)
+      expect(response.body).to include("Load more")
     end
 
     it "shows like and repost buttons on tagged posts" do

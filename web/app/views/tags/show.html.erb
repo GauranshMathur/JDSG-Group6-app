@@ -4,15 +4,15 @@
   <h1 class="feed__heading">#<%= @tag.name %></h1>
 
   <div id="timeline" class="timeline">
-    <%= render partial: "posts/post", collection: @posts,
-              locals: { liked_post_ids: @liked_post_ids, reposted_post_ids: @reposted_post_ids } %>
+    <% @page.items.each do |feed_item| %>
+      <%= render "posts/feed_item", feed_item: feed_item,
+            liked_post_ids: @page.liked_post_ids, reposted_post_ids: @page.reposted_post_ids %>
+    <% end %>
 
-    <% if @posts.empty? %>
+    <% if @page.empty? %>
       <p class="timeline__empty">No posts with this tag yet.</p>
     <% end %>
   </div>
 
-  <%= render "posts/pagination",
-        next_cursor: @next_cursor,
-        url: tag_path(@tag.name, after: @next_cursor) %>
+  <%= render "posts/pagination", next_url: @page.next_url %>
 </div>

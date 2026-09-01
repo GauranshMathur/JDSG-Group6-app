@@ -1,7 +1,9 @@
-<%# Callers pass the URL for the next page, since the same cursor means a
-    different path on the feed and on a profile. %>
-<% if next_cursor.present? %>
+<%# Every timeline pages the same way from here: the page object either has a
+    next URL or it does not. Which of the two paging styles produced that URL —
+    a page number for the ranked feed (ADR 0011), a cursor everywhere else
+    (ADR 0002) — is decided in TimelinePage and is not the view's business. %>
+<% if next_url.present? %>
   <div class="pagination">
-    <%= link_to "Load older posts", url, class: "pagination__more" %>
+    <%= link_to "Load more", next_url, class: "pagination__more" %>
   </div>
 <% end %>

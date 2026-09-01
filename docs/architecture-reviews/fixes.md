@@ -290,6 +290,57 @@ adapter is not the same as running against it, and the fix does not pretend othe
 
 ---
 
+## Finding 4, second half — nothing owned "a page of a timeline"
+
+**Pull request:** [#101](https://github.com/GauranshMathur/JDSG-Group6-app/pull/101) ·
+**Issue:** [#86](https://github.com/GauranshMathur/JDSG-Group6-app/issues/86)
+
+The 500s were fixed in [#94](https://github.com/GauranshMathur/JDSG-Group6-app/pull/94);
+this is the structural half that made two routes share one defect.
+
+**What was wrong.** Four timelines — the feed, a profile, a tag and a search — each
+assembled the same answer for themselves: `PAGE_SIZE` declared three times under three
+names, three "is there a next page?" protocols, two URL dialects, and four views that each
+knew which applied to them. One caller forgot the engagement sets entirely, which is why
+`_post.html.erb` carried a `defined?(liked_post_ids)` guard papering over an interface its
+callers satisfied inconsistently.
+
+**What replaced it.** `TimelinePage` — the rows to render, where the next page is, and what
+the viewer has already done to those rows. Tag and search rows are wrapped as `FeedItem`s
+so every timeline hands the views the same thing. **Both paging styles survive**, because
+both are right where they are used: positional for the ranked feed
+([ADR 0011](../adr/0011-ranked-window.md)), keyset everywhere else
+([ADR 0002](../adr/0002-keyset-pagination.md)). What was missing was a module that knows
+which applies where — that difference now lives in two constructors instead of four views.
+`TimelinePagination` is gone; it was two modules under one name.
+
+**A bug found on the way.** The feed and profiles rendered their pagination link with class
+`pagination__link`, **which no stylesheet defines** — those links have been rendering
+unstyled. Tag and search used `pagination__more`, which is styled. Unifying on the styled
+one fixes it. This is the third time this repository has shipped an unstyled control that
+every spec passed over, because a spec asserting `response.body` includes a string cannot
+see CSS.
+
+**What it cost.** The link now says "Load more" everywhere; tag and search previously said
+"Load older posts". A deliberate copy change, and the two specs asserting the old wording
+were updated rather than the label being kept per-timeline. The post detail page also now
+builds a `TimelinePage` purely for its engagement sets, which is the interface being used
+slightly off-label — it is not a timeline, it just renders the same rows.
+
+**Measured.** Structure, so the numbers are counts:
+
+| | Before | After |
+| --- | --- | --- |
+| `PAGE_SIZE` declarations | **3**, under 3 names | 1 |
+| Next-page protocols | **3** | 1 |
+| Pagination partial call shapes | 2 (+2 views hand-rolling their own link) | 1 |
+| Views knowing which paging style applies | 4 | **0** |
+| Defensive `defined?` guards in `_post` | 2 | **0** |
+| Pagination links with no CSS rule | **2 of 4 timelines** | 0 |
+
+Verified by loading all four timelines against a running server with 31 posts: each renders
+twenty rows and one `pagination__more` link, the feed and profile linking `?page=1` and tag
+and search linking `?after=<cursor>`, with page two of a profile serving the remaining seven.
 ## Finding 7 — the image policy lived in a view, and the model's copy was dead
 
 **Pull request:** [#100](https://github.com/GauranshMathur/JDSG-Group6-app/pull/100) ·

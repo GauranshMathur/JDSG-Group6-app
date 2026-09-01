@@ -1,17 +1,11 @@
 class ProfilesController < ApplicationController
-  include TimelinePagination
-
   # Reading is public; only writing needs an account (F-2.5).
   allow_unauthenticated_access only: :show
 
   def show
     @user = User.find_by!(username: params[:username].downcase)
-    feed = ProfileFeed.new(@user, page: page_param)
-    @feed_items = feed.items
-    @next_page = feed.next_page
-    all_posts = @feed_items.map(&:post)
-    @liked_post_ids = liked_post_ids_for(all_posts)
-    @reposted_post_ids = reposted_post_ids_for(all_posts)
+    @page = TimelinePage.from_feed(ProfileFeed.new(@user, page: TimelinePage.page_number(params[:page])),
+                                   viewer: Current.user) { |page| profile_path(@user.username, page: page) }
   end
 
   def edit
