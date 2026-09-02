@@ -66,6 +66,65 @@ jobs:
       - name: Version derivation
         run: .github/scripts/test-next-version.sh
 
+  # The same suite against the database the app is meant to move to. Until this
+  # existed the switch was a claim: DATABASE_URL is the design, and no job had
+  # ever run a line of the suite on PostgreSQL. F-6.3 in particular — "search
+  # behaves identically on SQLite and PostgreSQL" — was recorded as met on an
+  # adapter whose LIKE is forgiving enough to hide the opposite.
+  #
+  # It is a separate job rather than a matrix so the SQLite run stays the fast
+  # one every pull request waits on, and so a PostgreSQL-only failure names
+  # itself on the checks list.
+  postgres:
+    name: Test on PostgreSQL
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        # Without this the suite can reach the port before the server accepts
+        # connections, which fails as a connection error rather than as a test.
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      RAILS_ENV: test
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/twitter_clone_test
+      # The pg gem lives in an optional bundle group, so that nobody needs
+      # PostgreSQL installed to work on the app.
+      BUNDLE_WITH: postgres
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ruby/setup-ruby@v1
+        with:
+          working-directory: web
+          bundler-cache: true
+
+      - name: Install libvips
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libvips-tools
+
+      # schema:load, not db:prepare: db:prepare seeds a database it creates, and
+      # seeded rows are not rolled back by the per-example transaction, so every
+      # expectation about "the posts that exist" fails. Learned the hard way.
+      - name: Load the schema
+        working-directory: web
+        run: bin/rails db:create db:schema:load
+
+      - name: RSpec
+        working-directory: web
+        run: bundle exec rspec --format progress
+
+
   lint:
     name: Lint
     runs-on: ubuntu-latest

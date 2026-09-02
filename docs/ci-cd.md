@@ -191,6 +191,32 @@ If a suppression is ever needed again, bring the whole shape back — the explic
 file *and* the detector that watches it. A suppression with nothing watching it is how a
 temporary exception becomes permanent.
 
+## The PostgreSQL job
+
+The same suite, against the database the app is meant to move to. Until it existed the
+switch was a claim rather than a fact: `DATABASE_URL` is the design, `docs/database.md`
+says so, and **no job had ever run a line of the suite on PostgreSQL**.
+
+The first run failed **310 of 393 examples**, and the interesting part is that not one of
+them was application code. A spec hook issued `PRAGMA case_sensitive_like = ON` — SQLite's
+way of making `LIKE` case-sensitive, and a syntax error on PostgreSQL. In PostgreSQL a
+failed statement aborts the entire transaction, so one bad hook did not fail one example;
+it failed almost everything that ran after it. The hook now asks the adapter first.
+
+So the portability problem was in the tests, not the app — which is precisely the kind of
+thing that stays invisible until something runs it. Both adapters now run the same 393
+examples green.
+
+Two details worth keeping:
+
+- **A separate job, not a matrix.** The SQLite run stays the fast one every pull request
+  waits on, and a PostgreSQL-only failure names itself on the checks list instead of
+  hiding inside a matrix leg.
+- **`db:schema:load`, not `db:prepare`.** `db:prepare` seeds a database it has just
+  created, and seeded rows are not rolled back by the per-example transaction, so every
+  expectation about which posts exist fails. This cost two debugging rounds locally before
+  the workflow was written.
+
 ## SonarQube
 
 The target is **SonarQube Cloud** (`https://sonarcloud.io`), organization `gauranshmathur`,
