@@ -50,7 +50,14 @@ RUN apt-get update -qq && \
 COPY vendor/* ./vendor/
 COPY Gemfile Gemfile.lock ./
 
+# The superseded resolv specification goes with the install. resolv 0.3.1 is a
+# *default* gem in this base image and carries CVE-2026-80212; the Gemfile pins
+# 0.7.2, which is what the application loads, but the old specification stays on
+# disk and is what an image scanner reads. Removing it makes the image describe
+# what it actually runs. Only the specification goes — the stdlib source stays,
+# and the bundled 0.7.2 is what `require "resolv"` resolves to.
 RUN bundle install && \
+    rm -f /usr/local/lib/ruby/gems/*/specifications/default/resolv-0.3.1.gemspec && \
     rm -rf ~/.bundle/ "${BUNDLE_PATH}"/ruby/*/cache "${BUNDLE_PATH}"/ruby/*/bundler/gems/*/.git && \
     # -j 1 disable parallel compilation to avoid a QEMU bug: https://github.com/rails/bootsnap/issues/495
     bundle exec bootsnap precompile -j 1 --gemfile
