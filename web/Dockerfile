@@ -27,6 +27,17 @@ RUN apt-get update -qq && \
     ln -s /usr/lib/$(uname -m)-linux-gnu/libjemalloc.so.2 /usr/local/lib/libjemalloc.so && \
     rm -rf /var/lib/apt/lists /var/cache/apt/archives
 
+# resolv 0.3.1 ships as a *default* gem in this base image and carries
+# CVE-2026-80212. Bundler cannot replace a default gem, so the Gemfile pins
+# 0.7.2 — which is what the application loads — and the superseded
+# specification is removed here, because it stays on disk otherwise and is what
+# an image scanner reads. Only the specification goes; the stdlib source stays.
+#
+# In `base` rather than in `build`, because the final stage starts FROM base
+# again: removing it downstream leaves the vulnerable specification in the image
+# that actually ships. That is exactly what the first attempt at this did.
+RUN rm -f /usr/local/lib/ruby/gems/*/specifications/default/resolv-0.3.1.gemspec
+
 # Set production environment variables and enable jemalloc for reduced memory usage and latency.
 # BUNDLE_WITHOUT excludes test as well as development: RSpec, RuboCop and Brakeman
 # sit in "group :development, :test", and a gem is only skipped when every group
@@ -50,14 +61,7 @@ RUN apt-get update -qq && \
 COPY vendor/* ./vendor/
 COPY Gemfile Gemfile.lock ./
 
-# The superseded resolv specification goes with the install. resolv 0.3.1 is a
-# *default* gem in this base image and carries CVE-2026-80212; the Gemfile pins
-# 0.7.2, which is what the application loads, but the old specification stays on
-# disk and is what an image scanner reads. Removing it makes the image describe
-# what it actually runs. Only the specification goes — the stdlib source stays,
-# and the bundled 0.7.2 is what `require "resolv"` resolves to.
 RUN bundle install && \
-    rm -f /usr/local/lib/ruby/gems/*/specifications/default/resolv-0.3.1.gemspec && \
     rm -rf ~/.bundle/ "${BUNDLE_PATH}"/ruby/*/cache "${BUNDLE_PATH}"/ruby/*/bundler/gems/*/.git && \
     # -j 1 disable parallel compilation to avoid a QEMU bug: https://github.com/rails/bootsnap/issues/495
     bundle exec bootsnap precompile -j 1 --gemfile
