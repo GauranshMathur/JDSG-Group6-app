@@ -12,12 +12,22 @@ require "rails_helper"
 # will, which is what lets these fail before the fix rather than on the day of
 # the switch.
 RSpec.describe "Search scopes" do
+  # Compare the way PostgreSQL does, whichever adapter is running.
+  #
+  # SQLite's LIKE ignores ASCII case, so on SQLite the pragma is what makes
+  # these examples able to fail at all. PostgreSQL's LIKE is already
+  # case-sensitive and has no such pragma — issuing one there is a syntax
+  # error, and in PostgreSQL a failed statement aborts the whole transaction,
+  # so an adapter-blind hook does not fail one example, it fails the rest of
+  # the run. Which is exactly what it did the first time the suite was pointed
+  # at PostgreSQL.
   around do |example|
     connection = ActiveRecord::Base.connection
-    connection.execute("PRAGMA case_sensitive_like = ON")
+    sqlite = connection.adapter_name.downcase.include?("sqlite")
+    connection.execute("PRAGMA case_sensitive_like = ON") if sqlite
     example.run
   ensure
-    connection.execute("PRAGMA case_sensitive_like = OFF")
+    connection.execute("PRAGMA case_sensitive_like = OFF") if sqlite
   end
 
   describe "Post.search" do
