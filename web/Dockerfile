@@ -27,6 +27,17 @@ RUN apt-get update -qq && \
     ln -s /usr/lib/$(uname -m)-linux-gnu/libjemalloc.so.2 /usr/local/lib/libjemalloc.so && \
     rm -rf /var/lib/apt/lists /var/cache/apt/archives
 
+# resolv 0.3.1 ships as a *default* gem in this base image and carries
+# CVE-2026-80212. Bundler cannot replace a default gem, so the Gemfile pins
+# 0.7.2 — which is what the application loads — and the superseded
+# specification is removed here, because it stays on disk otherwise and is what
+# an image scanner reads. Only the specification goes; the stdlib source stays.
+#
+# In `base` rather than in `build`, because the final stage starts FROM base
+# again: removing it downstream leaves the vulnerable specification in the image
+# that actually ships. That is exactly what the first attempt at this did.
+RUN rm -f /usr/local/lib/ruby/gems/*/specifications/default/resolv-0.3.1.gemspec
+
 # Set production environment variables and enable jemalloc for reduced memory usage and latency.
 # BUNDLE_WITHOUT excludes test as well as development: RSpec, RuboCop and Brakeman
 # sit in "group :development, :test", and a gem is only skipped when every group
